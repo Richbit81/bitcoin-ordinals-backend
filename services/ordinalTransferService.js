@@ -253,10 +253,10 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
     // Output: Send ordinal to recipient (with the full UTXO value)
     psbt.addOutput({
       address: recipientAddress,
-      value: utxoValue, // Ordinal keeps its full value
+      value: utxoValueBigInt, // Ordinal keeps its full value (must be BigInt)
     });
     
-    console.log(`[OrdinalTransfer] Output: ${utxoValue} sats to ${recipientAddress}`);
+    console.log(`[OrdinalTransfer] Output: ${utxoValueBigInt.toString()} sats to ${recipientAddress}`);
     console.log(`[OrdinalTransfer] ✅ UNSIGNED PSBT created: ${psbt.inputCount} input(s), ${psbt.outputCount} output(s)`);
     console.log(`[OrdinalTransfer] ℹ️  This PSBT will be signed by the wallet in the frontend - NO PRIVATE KEY NEEDED IN BACKEND!`);
     return psbt;
