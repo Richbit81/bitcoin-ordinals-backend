@@ -7,6 +7,9 @@ import { fileURLToPath } from 'url';
 
 dotenv.config();
 
+// Initialize ECC library for bitcoinjs-lib v7.0.1+
+bitcoin.initEccLib(ecc);
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
