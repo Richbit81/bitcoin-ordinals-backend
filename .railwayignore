@@ -1,0 +1,30 @@
+# Railway ignore file
+# Dateien die nicht auf Railway deployed werden sollen
+
+# Logs
+logs/
+*.log
+
+# Lokale Daten
+packSupply.json
+
+# Environment (wird über Railway Variables gesetzt)
+.env
+.env.local
+.env.*.local
+
+# Node modules (werden automatisch installiert)
+node_modules/
+
+# Test-Dateien
+test-*.js
+*.test.js
+
+# Lokale Tools (nicht auf Railway verfügbar)
+ord.exe
+*.exe
+
+# Bitcoin Core Daten (nicht auf Railway verfügbar)
+D:\Bitcoin\
+C:\tools\
+
