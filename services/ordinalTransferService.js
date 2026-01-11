@@ -175,12 +175,58 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
     // The wallet will sign this PSBT in the frontend using the owner's private key
     const psbt = new bitcoin.Psbt({ network: NETWORK });
 
-    let scriptBuffer;
+    // Convert scriptPk (hex string) to pure Uint8Array (NOT Buffer!)
+    // bip174 requires pure Uint8Array, not Buffer
+    let scriptBytes;
     try {
-      scriptBuffer = Buffer.from(scriptPk, 'hex');
+      // Step 1: Convert hex string to Buffer first (for hex parsing)
+      const tempBuffer = Buffer.from(scriptPk, 'hex');
+      
+      // Step 2: Extract bytes to plain array (no Buffer references)
+      const scriptLength = tempBuffer.length;
+      const plainBytes = [];
+      for (let i = 0; i < scriptLength; i++) {
+        plainBytes.push(Number(tempBuffer[i]) & 0xFF);
+      }
+
+      // Step 3: Create ArrayBuffer and then Uint8Array from it
+      // This ensures complete isolation from any Buffer references
+      const arrayBuffer = new ArrayBuffer(plainBytes.length);
+      scriptBytes = new Uint8Array(arrayBuffer);
+      for (let i = 0; i < plainBytes.length; i++) {
+        scriptBytes[i] = plainBytes[i];
+      }
+
+      // Step 4: Final verification - must be pure Uint8Array
+      if (Buffer.isBuffer(scriptBytes)) {
+        throw new Error(`FATAL: scriptBytes is still a Buffer after conversion!`);
+      }
+      if (scriptBytes.constructor.name !== 'Uint8Array') {
+        throw new Error(`FATAL: scriptBytes constructor is ${scriptBytes.constructor.name}, expected Uint8Array`);
+      }
+      if (scriptBytes.constructor !== Uint8Array) {
+        throw new Error(`FATAL: scriptBytes.constructor !== Uint8Array (got ${scriptBytes.constructor})`);
+      }
     } catch (hexError) {
-      throw new Error(`Invalid scriptPk format (not hex): ${scriptPk.substring(0, 50)}...`);
+      throw new Error(`Invalid scriptPk format (not hex): ${scriptPk.substring(0, 50)}... Error: ${hexError.message}`);
     }
+
+    // Convert value to BigInt (bip174 requires bigint, not number)
+    const utxoValueBigInt = typeof utxoValue === 'bigint' ? utxoValue : BigInt(utxoValue);
+
+    // Create witnessUtxo object with pure Uint8Array and BigInt
+    // Use Object.freeze to prevent any modifications that might trigger Buffer detection
+    const witnessUtxo = Object.freeze({
+      script: scriptBytes,  // Pure Uint8Array (guaranteed no Buffer inheritance)
+      value: utxoValueBigInt,   // BigInt (as required)
+    });
+
+    // Debug: Final verification before addInput
+    console.log(`[OrdinalTransfer] 🔍 Final verification before addInput:`);
+    console.log(`  - scriptBytes type: ${scriptBytes.constructor.name}`);
+    console.log(`  - scriptBytes is Buffer: ${Buffer.isBuffer(scriptBytes)}`);
+    console.log(`  - value type: ${typeof witnessUtxo.value}`);
+    console.log(`  - value: ${witnessUtxo.value.toString()}`);
 
     // Add input (the UTXO containing the ordinal)
     // Note: We only add the UTXO data here - NO signing information!
@@ -188,10 +234,7 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
     psbt.addInput({
       hash: txid,
       index: parseInt(vout),
-      witnessUtxo: {
-        script: scriptBuffer,
-        value: utxoValue,
-      },
+      witnessUtxo: witnessUtxo,
       // NO tapInternalKey, NO signing info - wallet will add that!
     });
 
