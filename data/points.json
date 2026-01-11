@@ -1,0 +1,106 @@
+{
+  "bc1p58vd5uh3uks2a3meds0pgqa9664hxexf56w9ahqs7ws3rdfefe0s6j26cz": {
+    "total": 65,
+    "history": [
+      {
+        "points": 5,
+        "reason": "first-mint-bonus",
+        "timestamp": "2026-01-06T22:17:45.027Z",
+        "details": {}
+      },
+      {
+        "points": 10,
+        "reason": "minted-starter-pack",
+        "timestamp": "2026-01-06T22:17:45.027Z",
+        "details": {
+          "packId": "starter-pack",
+          "packName": "Starter Pack",
+          "cardCount": 0
+        }
+      },
+      {
+        "points": 10,
+        "reason": "minted-starter-pack",
+        "timestamp": "2026-01-06T22:22:25.246Z",
+        "details": {
+          "packId": "starter-pack",
+          "packName": "Starter Pack",
+          "cardCount": 0
+        }
+      },
+      {
+        "points": 10,
+        "reason": "minted-starter-pack",
+        "timestamp": "2026-01-06T22:41:12.316Z",
+        "details": {
+          "packId": "starter-pack",
+          "packName": "Starter Pack",
+          "cardCount": 5
+        }
+      },
+      {
+        "points": 10,
+        "reason": "minted-starter-pack",
+        "timestamp": "2026-01-06T23:12:45.267Z",
+        "details": {
+          "packId": "starter-pack",
+          "packName": "Starter Pack",
+          "cardCount": 5
+        }
+      },
+      {
+        "points": 10,
+        "reason": "minted-starter-pack",
+        "timestamp": "2026-01-07T16:42:40.125Z",
+        "details": {
+          "packId": "starter-pack",
+          "packName": "Starter Pack",
+          "cardCount": 5
+        }
+      },
+      {
+        "points": 10,
+        "reason": "minted-starter-pack",
+        "timestamp": "2026-01-07T18:25:15.162Z",
+        "details": {
+          "packId": "starter-pack",
+          "packName": "Starter Pack",
+          "cardCount": 5
+        }
+      }
+    ],
+    "firstMint": "2026-01-06T22:17:45.027Z",
+    "createdAt": "2026-01-06T22:17:45.027Z",
+    "lastActivity": "2026-01-07T18:25:15.162Z"
+  },
+  "bc1p9j4g6r27yqhmp4c403vn33mz7uug439sthqngkkrylu7d7uq7d6qvz39jj": {
+    "total": 10,
+    "history": [
+      {
+        "points": 5,
+        "reason": "Minted Tech & Games item: Slot Machine (2000 sats)",
+        "timestamp": "2026-01-10T12:26:45.235Z",
+        "details": {
+          "collection": "Tech & Games",
+          "itemName": "Slot Machine",
+          "itemPrice": 2000,
+          "inscriptionId": "pending-202601-BLACK-M0YR3G46-0"
+        }
+      },
+      {
+        "points": 5,
+        "reason": "Minted Tech & Games item: BLOCKTRIS (2000 sats)",
+        "timestamp": "2026-01-10T12:44:19.360Z",
+        "details": {
+          "collection": "Tech & Games",
+          "itemName": "BLOCKTRIS",
+          "itemPrice": 2000,
+          "inscriptionId": "pending-202601-BLACK-UVLB6UPJ-0"
+        }
+      }
+    ],
+    "firstMint": null,
+    "createdAt": "2026-01-10T12:26:45.235Z",
+    "lastActivity": "2026-01-10T12:44:19.360Z"
+  }
+}

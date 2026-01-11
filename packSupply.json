@@ -1,0 +1,10 @@
+{
+  "starter-pack": {
+    "sold": 1,
+    "total": 600
+  },
+  "premium-pack": {
+    "sold": 0,
+    "total": 25
+  }
+}
