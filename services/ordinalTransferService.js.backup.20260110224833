@@ -1,0 +1,512 @@
+/**
+ * Ordinal Transfer Service
+ * Erstellt und signiert PSBTs für Ordinal-Transfers
+ */
+
+import * as bitcoin from 'bitcoinjs-lib';
+import ecc from '@bitcoinerlab/secp256k1';
+import { ECPairFactory } from 'ecpair';
+import { BIP32Factory } from 'bip32';
+
+const ECPair = ECPairFactory(ecc);
+const BIP32 = BIP32Factory(ecc);
+
+const UNISAT_API_URL = process.env.UNISAT_API_URL || 'https://open-api.unisat.io';
+const UNISAT_API_KEY = process.env.UNISAT_API_KEY;
+
+// Admin Wallet privater Key (aus Environment Variable)
+// Format: WIF (Wallet Import Format) oder hex
+const ADMIN_PRIVATE_KEY = process.env.ADMIN_PRIVATE_KEY || process.env.ADMIN_WIF;
+
+// Bitcoin Network (mainnet oder testnet)
+const NETWORK = process.env.BITCOIN_NETWORK === 'testnet' 
+  ? bitcoin.networks.testnet 
+  : bitcoin.networks.bitcoin;
+
+/**
+ * Hole UTXO-Informationen für ein Ordinal von UniSat API
+ */
+async function getOrdinalUTXO(inscriptionId) {
+  try {
+    const url = `${UNISAT_API_URL}/v1/indexer/inscription/info/${inscriptionId}`;
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${UNISAT_API_KEY}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch inscription info: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    
+    if (!data.data) {
+      throw new Error('Inscription not found');
+    }
+
+    const inscription = data.data;
+    
+    return {
+      txid: inscription.txid,
+      vout: inscription.vout || 0,
+      value: inscription.value || 546, // Minimum UTXO value (dust limit)
+      address: inscription.address,
+    };
+  } catch (error) {
+    console.error('[OrdinalTransfer] Error fetching UTXO:', error);
+    throw error;
+  }
+}
+
+/**
+ * Hole alle UTXOs für eine Adresse (für Change Output)
+ */
+async function getAddressUTXOs(address) {
+  try {
+    const url = `${UNISAT_API_URL}/v1/indexer/address/${address}/utxo-data`;
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${UNISAT_API_KEY}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch UTXOs: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.data || [];
+  } catch (error) {
+    console.error('[OrdinalTransfer] Error fetching UTXOs:', error);
+    return [];
+  }
+}
+
+/**
+ * Erstelle Admin-Wallet KeyPair aus privatem Key
+ */
+function getAdminKeyPair() {
+  if (!ADMIN_PRIVATE_KEY) {
+    throw new Error('ADMIN_PRIVATE_KEY or ADMIN_WIF not set in environment variables');
+  }
+
+  try {
+    // Versuche WIF-Format zuerst
+    if (ADMIN_PRIVATE_KEY.length === 52 || ADMIN_PRIVATE_KEY.length === 51) {
+      return ECPair.fromWIF(ADMIN_PRIVATE_KEY, NETWORK);
+    }
+    
+    // Sonst versuche Hex-Format
+    const privateKeyBuffer = Buffer.from(ADMIN_PRIVATE_KEY, 'hex');
+    return ECPair.fromPrivateKey(privateKeyBuffer, { network: NETWORK });
+  } catch (error) {
+    throw new Error(`Failed to parse admin private key: ${error.message}`);
+  }
+}
+
+/**
+ * Erstelle PSBT für Ordinal-Transfer
+ * @param {boolean} requireAdminKeyPair - Wenn false, wird kein Admin-KeyPair benötigt (für Pre-Signing)
+ */
+export async function createTransferPSBT(inscriptionId, recipientAddress, feeRate, requireAdminKeyPair = true) {
+  try {
+    console.log(`[OrdinalTransfer] Creating PSBT for ${inscriptionId} to ${recipientAddress} at ${feeRate} sat/vB`);
+
+    // 1. Hole Ordinal UTXO
+    const ordinalUTXO = await getOrdinalUTXO(inscriptionId);
+    console.log(`[OrdinalTransfer] Ordinal UTXO: ${ordinalUTXO.txid}:${ordinalUTXO.vout}`);
+
+    let adminKeyPair = null;
+    let xOnlyPubkey = null;
+    let adminAddress = null;
+
+    // 2. Hole Admin-Wallet KeyPair (nur wenn benötigt)
+    if (requireAdminKeyPair) {
+      adminKeyPair = getAdminKeyPair();
+      
+      // Erstelle P2TR Adresse (Taproot)
+      // Für Taproot brauchen wir den x-only public key (32 bytes ohne 0x02/0x03 prefix)
+      xOnlyPubkey = adminKeyPair.publicKey.slice(1, 33);
+      adminAddress = bitcoin.payments.p2tr({
+        internalPubkey: xOnlyPubkey,
+        network: NETWORK,
+      }).address;
+
+      console.log(`[OrdinalTransfer] Admin address: ${adminAddress}`);
+
+      // 3. Prüfe ob Admin das Ordinal besitzt
+      if (ordinalUTXO.address.toLowerCase() !== adminAddress.toLowerCase()) {
+        throw new Error(`Ordinal is not owned by admin wallet. Owner: ${ordinalUTXO.address}, Admin: ${adminAddress}`);
+      }
+    } else {
+      // Für Pre-Signing: Verwende die Adresse aus dem UTXO
+      adminAddress = ordinalUTXO.address;
+      console.log(`[OrdinalTransfer] Using owner address for PSBT: ${adminAddress}`);
+      
+      // Für Taproot brauchen wir den x-only public key, aber wir haben nur die Adresse
+      // Wir müssen die Adresse parsen oder einen anderen Weg finden
+      // Für jetzt: Wir erstellen die PSBT ohne xOnlyPubkey und hoffen, dass das Wallet es richtig macht
+      // Oder: Wir müssen die Adresse in einen Public Key konvertieren
+      // Für Pre-Signing: Das Wallet wird die Signatur machen, also brauchen wir hier keinen KeyPair
+    }
+
+    // 4. Hole zusätzliche UTXOs für Fees (falls nötig)
+    const utxos = await getAddressUTXOs(adminAddress);
+    const additionalUTXOs = utxos.filter(utxo => 
+      !(utxo.txid === ordinalUTXO.txid && utxo.vout === ordinalUTXO.vout)
+    );
+
+    // 5. Erstelle PSBT
+    const psbt = new bitcoin.Psbt({ network: NETWORK });
+
+    // 6. Füge Ordinal UTXO als Input hinzu
+    if (requireAdminKeyPair && xOnlyPubkey) {
+      // Normale Methode mit KeyPair
+      const p2trPayment = bitcoin.payments.p2tr({
+        internalPubkey: xOnlyPubkey,
+        network: NETWORK,
+      });
+      
+      psbt.addInput({
+        hash: ordinalUTXO.txid,
+        index: ordinalUTXO.vout,
+        witnessUtxo: {
+          script: p2trPayment.output,
+          value: ordinalUTXO.value,
+        },
+        tapInternalKey: xOnlyPubkey,
+      });
+    } else {
+      // Für Pre-Signing: Verwende eine einfachere Methode
+      // Das Wallet wird die Details beim Signieren hinzufügen
+      // Wir müssen die UTXO-Daten von der UniSat API holen
+      psbt.addInput({
+        hash: ordinalUTXO.txid,
+        index: ordinalUTXO.vout,
+        // witnessUtxo wird vom Wallet hinzugefügt
+        // tapInternalKey wird vom Wallet hinzugefügt
+      });
+    }
+
+    // 7. Füge zusätzliche UTXOs hinzu (für Fees)
+    let totalInputValue = ordinalUTXO.value;
+    if (requireAdminKeyPair && xOnlyPubkey) {
+      const p2trPayment = bitcoin.payments.p2tr({
+        internalPubkey: xOnlyPubkey,
+        network: NETWORK,
+      });
+      
+      for (const utxo of additionalUTXOs.slice(0, 5)) { // Max 5 zusätzliche UTXOs
+        psbt.addInput({
+          hash: utxo.txid,
+          index: utxo.vout,
+          witnessUtxo: {
+            script: p2trPayment.output,
+            value: utxo.value || 0,
+          },
+          tapInternalKey: xOnlyPubkey,
+        });
+        totalInputValue += (utxo.value || 0);
+      }
+    } else {
+      // Für Pre-Signing: Füge UTXOs ohne vollständige Details hinzu
+      // Das Wallet wird die Details beim Signieren hinzufügen
+      for (const utxo of additionalUTXOs.slice(0, 5)) {
+        psbt.addInput({
+          hash: utxo.txid,
+          index: utxo.vout,
+        });
+        totalInputValue += (utxo.value || 0);
+      }
+    }
+
+    // 8. Berechne geschätzte Transaktionsgröße und Fees
+    // Grobe Schätzung: ~150 vBytes base + ~58 vBytes pro Input + ~43 vBytes pro Output
+    const estimatedSize = 150 + (psbt.inputCount * 58) + (2 * 43); // 2 Outputs (recipient + change)
+    const estimatedFee = estimatedSize * feeRate;
+
+    // 9. Füge Output für Empfänger hinzu (Ordinal)
+    psbt.addOutput({
+      address: recipientAddress,
+      value: ordinalUTXO.value, // Ordinal behält seinen Wert
+    });
+
+    // 10. Berechne Change (falls vorhanden)
+    const changeValue = totalInputValue - ordinalUTXO.value - estimatedFee;
+    if (changeValue > 546) { // Dust limit
+      psbt.addOutput({
+        address: adminAddress || ordinalUTXO.address, // Fallback für Pre-Signing
+        value: changeValue,
+      });
+    } else if (changeValue < 0) {
+      throw new Error(`Insufficient funds. Need ${Math.abs(changeValue)} more sats for fees`);
+    }
+
+    // 11. Setze Fee-Rate
+    psbt.setFeeRate(feeRate);
+
+    console.log(`[OrdinalTransfer] ✅ PSBT created: ${estimatedSize} vBytes, ${estimatedFee} sats fee`);
+
+    return psbt;
+  } catch (error) {
+    console.error('[OrdinalTransfer] Error creating PSBT:', error);
+    throw error;
+  }
+}
+
+/**
+ * Signiere und broadcastet PSBT
+ */
+export async function signAndBroadcastPSBT(psbt) {
+  try {
+    console.log('[OrdinalTransfer] Signing PSBT...');
+
+    // 1. Hole Admin KeyPair
+    const adminKeyPair = getAdminKeyPair();
+
+    // 2. Signiere alle Inputs (Taproot Signatur)
+    // Für Taproot (P2TR) verwenden wir signInput mit dem KeyPair
+    // bitcoinjs-lib erkennt automatisch Taproot-Inputs
+    for (let i = 0; i < psbt.inputCount; i++) {
+      psbt.signInput(i, adminKeyPair);
+    }
+
+    // 3. Finalisiere PSBT
+    psbt.finalizeAllInputs();
+
+    // 4. Extrahiere finale Transaktion
+    const tx = psbt.extractTransaction();
+    const txHex = tx.toHex();
+
+    console.log(`[OrdinalTransfer] ✅ Transaction signed: ${tx.getId()}`);
+
+    // 5. Broadcast über UniSat API
+    const broadcastUrl = `${UNISAT_API_URL}/v1/indexer/broadcast`;
+    const broadcastResponse = await fetch(broadcastUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${UNISAT_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        rawtx: txHex,
+      }),
+    });
+
+    if (!broadcastResponse.ok) {
+      const errorData = await broadcastResponse.json().catch(() => ({}));
+      throw new Error(errorData.message || `Broadcast failed: ${broadcastResponse.statusText}`);
+    }
+
+    const broadcastData = await broadcastResponse.json();
+    const txid = tx.getId();
+
+    console.log(`[OrdinalTransfer] ✅ Transaction broadcasted: ${txid}`);
+
+    return {
+      txid,
+      txHex,
+      broadcastData,
+    };
+  } catch (error) {
+    console.error('[OrdinalTransfer] Error signing/broadcasting PSBT:', error);
+    throw error;
+  }
+}
+
+/**
+ * Erstelle PSBT für Pre-Signing (unsigniert, für Wallet-Signatur)
+ * Das Wallet wird die PSBT vervollständigen und signieren
+ * @param {string} inscriptionId - Inskription-ID
+ * @param {string} recipientAddress - Empfänger-Adresse
+ * @param {number} feeRate - Fee-Rate in sat/vB
+ * @returns {Promise<Object>} - { psbtBase64, psbtHex, estimatedFee, estimatedSize, utxoData }
+ */
+export async function preparePresignedTransfer(inscriptionId, recipientAddress, feeRate) {
+  try {
+    console.log(`[OrdinalTransfer] Preparing presigned transfer for ${inscriptionId} to ${recipientAddress}`);
+    
+    // 1. Hole Ordinal UTXO
+    const ordinalUTXO = await getOrdinalUTXO(inscriptionId);
+    console.log(`[OrdinalTransfer] Ordinal UTXO: ${ordinalUTXO.txid}:${ordinalUTXO.vout}`);
+    
+    // 2. Hole zusätzliche UTXOs für Fees
+    const utxos = await getAddressUTXOs(ordinalUTXO.address);
+    const additionalUTXOs = utxos.filter(utxo => 
+      !(utxo.txid === ordinalUTXO.txid && utxo.vout === ordinalUTXO.vout)
+    );
+    
+    // 3. Berechne geschätzte Größe und Fees
+    const estimatedInputs = 1 + Math.min(additionalUTXOs.length, 5);
+    const estimatedSize = 150 + (estimatedInputs * 58) + (2 * 43); // 2 Outputs (recipient + change)
+    const estimatedFee = estimatedSize * feeRate;
+    
+    // 4. Berechne Change
+    let totalInputValue = ordinalUTXO.value;
+    for (const utxo of additionalUTXOs.slice(0, 5)) {
+      totalInputValue += (utxo.value || 0);
+    }
+    const changeValue = totalInputValue - ordinalUTXO.value - estimatedFee;
+    
+    // 5. Erstelle minimale PSBT (Wallet wird sie vervollständigen)
+    const psbt = new bitcoin.Psbt({ network: NETWORK });
+    
+    // Füge Ordinal UTXO als Input hinzu (ohne vollständige Details - Wallet wird sie hinzufügen)
+    psbt.addInput({
+      hash: ordinalUTXO.txid,
+      index: ordinalUTXO.vout,
+    });
+    
+    // Füge zusätzliche UTXOs hinzu
+    for (const utxo of additionalUTXOs.slice(0, 5)) {
+      psbt.addInput({
+        hash: utxo.txid,
+        index: utxo.vout,
+      });
+    }
+    
+    // Füge Output für Empfänger hinzu
+    psbt.addOutput({
+      address: recipientAddress,
+      value: ordinalUTXO.value,
+    });
+    
+    // Füge Change Output hinzu (falls vorhanden)
+    if (changeValue > 546) {
+      psbt.addOutput({
+        address: ordinalUTXO.address, // Change geht zurück an Owner
+        value: changeValue,
+      });
+    }
+    
+    // Setze Fee-Rate
+    psbt.setFeeRate(feeRate);
+    
+    // Konvertiere PSBT zu Base64 (für Wallet)
+    const psbtBase64 = psbt.toBase64();
+    
+    console.log(`[OrdinalTransfer] ✅ PSBT prepared for pre-signing: ${estimatedSize} vBytes, ${estimatedFee} sats fee`);
+    
+    return {
+      psbtBase64,
+      estimatedFee,
+      estimatedSize,
+      inputCount: psbt.inputCount,
+      outputCount: psbt.outputCount,
+      utxoData: {
+        ordinal: ordinalUTXO,
+        additional: additionalUTXOs.slice(0, 5),
+        totalInputValue,
+        changeValue,
+      },
+    };
+  } catch (error) {
+    console.error('[OrdinalTransfer] Error preparing presigned transfer:', error);
+    throw error;
+  }
+}
+
+/**
+ * Finalisiere eine signierte PSBT und extrahiere die finale Transaktion
+ * @param {string} signedPsbtHex - Signierte PSBT als Hex-String
+ * @returns {Promise<string>} - Finale Transaktion als Hex-String
+ */
+export function finalizeSignedPSBT(signedPsbtHex) {
+  try {
+    console.log('[OrdinalTransfer] Finalizing signed PSBT...');
+    
+    // Parse PSBT
+    const psbt = bitcoin.Psbt.fromHex(signedPsbtHex);
+    
+    // Finalisiere alle Inputs (falls noch nicht finalisiert)
+    psbt.finalizeAllInputs();
+    
+    // Extrahiere finale Transaktion
+    const tx = psbt.extractTransaction();
+    const txHex = tx.toHex();
+    const txid = tx.getId();
+    
+    console.log(`[OrdinalTransfer] ✅ PSBT finalized: ${txid}`);
+    
+    return txHex;
+  } catch (error) {
+    console.error('[OrdinalTransfer] Error finalizing PSBT:', error);
+    throw error;
+  }
+}
+
+/**
+ * Broadcastet eine bereits signierte Transaktion
+ * @param {string} signedTxHex - Signierte Transaktion als Hex-String
+ * @returns {Promise<Object>} - { txid, broadcastData }
+ */
+export async function broadcastPresignedTx(signedTxHex) {
+  try {
+    console.log('[OrdinalTransfer] Broadcasting presigned transaction...');
+    
+    // Validiere Transaktion
+    const tx = bitcoin.Transaction.fromHex(signedTxHex);
+    const txid = tx.getId();
+    
+    console.log(`[OrdinalTransfer] Transaction ID: ${txid}`);
+    
+    // Broadcast über UniSat API
+    const broadcastUrl = `${UNISAT_API_URL}/v1/indexer/broadcast`;
+    const broadcastResponse = await fetch(broadcastUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${UNISAT_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        rawtx: signedTxHex,
+      }),
+    });
+
+    if (!broadcastResponse.ok) {
+      const errorData = await broadcastResponse.json().catch(() => ({}));
+      throw new Error(errorData.message || `Broadcast failed: ${broadcastResponse.statusText}`);
+    }
+
+    const broadcastData = await broadcastResponse.json();
+
+    console.log(`[OrdinalTransfer] ✅ Presigned transaction broadcasted: ${txid}`);
+
+    return {
+      txid,
+      txHex: signedTxHex,
+      broadcastData,
+    };
+  } catch (error) {
+    console.error('[OrdinalTransfer] Error broadcasting presigned transaction:', error);
+    throw error;
+  }
+}
+
+/**
+ * Transferiere Ordinal (kompletter Workflow)
+ * @param {string} inscriptionId - Inskription-ID
+ * @param {string} recipientAddress - Empfänger-Adresse
+ * @param {number} feeRate - Fee-Rate in sat/vB
+ * @param {string} presignedTxHex - Optional: Bereits signierte Transaktion (für Pre-Signing)
+ */
+export async function transferOrdinal(inscriptionId, recipientAddress, feeRate, presignedTxHex = null) {
+  try {
+    // Wenn bereits signierte Transaktion vorhanden, nur broadcasten
+    if (presignedTxHex) {
+      console.log('[OrdinalTransfer] Using presigned transaction');
+      return await broadcastPresignedTx(presignedTxHex);
+    }
+    
+    // Normale Methode: Erstelle PSBT, signiere und broadcaste
+    const psbt = await createTransferPSBT(inscriptionId, recipientAddress, feeRate, true);
+    const result = await signAndBroadcastPSBT(psbt);
+
+    return result;
+  } catch (error) {
+    console.error('[OrdinalTransfer] Transfer failed:', error);
+    throw error;
+  }
+}
+

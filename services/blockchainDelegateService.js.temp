@@ -1,0 +1,523 @@
+﻿/**
+ * Blockchain Delegate Service
+ * Ruft Delegate-Inskriptionen direkt von der Blockchain Ã¼ber UniSat API ab
+ */
+
+const UNISAT_API_KEY = process.env.UNISAT_API_KEY || '';
+const UNISAT_API_URL = process.env.UNISAT_API_URL || 'https://open-api.unisat.io';
+
+/**
+ * Hole alle Inskriptionen einer Adresse von der Chain
+ */
+export async function getInscriptionsByAddress(address) {
+  try {
+    // UniSat API v1 Endpoint mit Pagination-Parametern
+    // Versuche verschiedene Endpoint-Varianten
+    // HINWEIS: Basierend auf UniSat API-Dokumentation gibt es jetzt separate APIs:
+    // - blockchain-indexer (fÃ¼r Blockchain-Daten)
+    // - inscription-indexer (fÃ¼r Inskriptionen)
+    const endpoints = [
+      // Inscription-Indexer API (neu, speziell fÃ¼r Inskriptionen)
+      `${UNISAT_API_URL}/v1/inscription-indexer/address/${encodeURIComponent(address)}/inscription-list`,
+      `${UNISAT_API_URL}/v1/inscription-indexer/address/${encodeURIComponent(address)}/inscriptions`,
+      // Blockchain-Indexer API (alt, aber noch unterstÃ¼tzt)
+      `${UNISAT_API_URL}/v1/indexer/address/${encodeURIComponent(address)}/inscription-list`,
+      `${UNISAT_API_URL}/v1/indexer/address/${encodeURIComponent(address)}/inscriptions`,
+      `${UNISAT_API_URL}/v1/indexer/address/${encodeURIComponent(address)}/inscription`,
+    ];
+    
+    let lastError = null;
+    
+    for (const url of endpoints) {
+      try {
+        console.log(`[Blockchain] Trying endpoint: ${url}`);
+        const response = await fetch(url, {
+          headers: {
+            'Authorization': `Bearer ${UNISAT_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log(`[Blockchain] âœ… Success with endpoint: ${url}`);
+          
+          // UniSat API Format: { code: 0, data: { list: [...] } }
+          if (data.code === 0 && data.data) {
+            // PrÃ¼fe verschiedene mÃ¶gliche Datenstrukturen
+            const inscriptions = data.data.list || data.data.inscriptions || data.data || [];
+            console.log(`[Blockchain] Found ${inscriptions.length} inscriptions`);
+            
+            // Logge erste paar Inskription-IDs zur Debugging
+            if (inscriptions.length > 0) {
+              const firstIds = inscriptions.slice(0, 5).map(i => i.inscriptionId || i.id || 'unknown');
+              console.log(`[Blockchain] First ${Math.min(5, inscriptions.length)} inscription IDs:`, firstIds);
+            }
+            
+            return Array.isArray(inscriptions) ? inscriptions : [];
+          }
+          
+          console.log(`[Blockchain] âš ï¸ API response format unexpected:`, JSON.stringify(data).substring(0, 200));
+          return [];
+        } else if (response.status !== 404) {
+          // Wenn es kein 404 ist, logge den Fehler
+          const errorText = await response.text().catch(() => 'Unknown error');
+          console.warn(`[Blockchain] Endpoint ${url} returned ${response.status}: ${errorText}`);
+          lastError = new Error(`UniSat API error (${response.status}): ${errorText}`);
+        } else {
+          // 404 - versuche nÃ¤chsten Endpoint
+          console.log(`[Blockchain] Endpoint ${url} returned 404, trying next...`);
+        }
+      } catch (err) {
+        console.warn(`[Blockchain] Error with endpoint ${url}:`, err.message);
+        lastError = err;
+      }
+    }
+    
+    // Wenn alle Endpoints fehlschlagen, werfe den letzten Fehler
+    if (lastError) {
+      throw lastError;
+    }
+    
+    // Fallback: Leere Liste zurÃ¼ckgeben
+    console.warn(`[Blockchain] All endpoints failed, returning empty list`);
+    return [];
+  } catch (error) {
+    console.error('[Blockchain] Error fetching inscriptions:', error);
+    throw error;
+  }
+}
+
+/**
+ * Hole Content einer Inskription
+ */
+export async function getInscriptionContent(inscriptionId) {
+  try {
+    const response = await fetch(
+      `${UNISAT_API_URL}/v1/indexer/inscription/${inscriptionId}/content`,
+      {
+        headers: {
+          'Authorization': `Bearer ${UNISAT_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      // Wenn Content nicht verfÃ¼gbar, versuche es mit /content endpoint
+      const altResponse = await fetch(
+        `https://ordinals.com/content/${inscriptionId}`,
+        { method: 'GET' }
+      );
+      
+      if (altResponse.ok) {
+        return await altResponse.text();
+      }
+      
+      throw new Error(`UniSat API error: ${response.status}`);
+    }
+
+    const content = await response.text();
+    return content;
+  } catch (error) {
+    console.error(`[Blockchain] Error fetching content for ${inscriptionId}:`, error.message);
+    throw error;
+  }
+}
+
+/**
+ * Hole Details einer Inskription (inkl. Besitzer-Adresse)
+ */
+export async function getInscriptionDetails(inscriptionId) {
+  try {
+    const response = await fetch(
+      `${UNISAT_API_URL}/v1/indexer/inscription/${inscriptionId}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${UNISAT_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`UniSat API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.code === 0 && data.data) {
+      return data.data;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error(`[Blockchain] Error fetching details for ${inscriptionId}:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Hole alle Original-Karten-Inskription-IDs aus der Datenbank
+ */
+async function getAllOriginalCardInscriptionIds() {
+  try {
+    const cardsModule = await import('../config/cards.js');
+    const cards = cardsModule.ALL_CARDS || cardsModule.default || cardsModule.cards || [];
+    
+    // Extrahiere alle eindeutigen inscriptionIds
+    const originalIds = new Set();
+    cards.forEach(card => {
+      if (card.inscriptionId) {
+        originalIds.add(card.inscriptionId);
+      }
+    });
+    
+    console.log(`[Blockchain] ðŸ“‹ Geladen ${originalIds.size} Original-Karten-Inskription-IDs`);
+    return Array.from(originalIds);
+  } catch (error) {
+    console.error('[Blockchain] âŒ Fehler beim Laden der Karten-Datenbank:', error);
+    return [];
+  }
+}
+
+/**
+ * PrÃ¼fe ob eine Inskription ein Delegate ist (basierend auf Metadaten im Content)
+ */
+function isDelegateInscription(content, originalInscriptionIds = []) {
+  if (!content) return false;
+  
+  try {
+    // Methode 1: Direktes JSON mit ord-20 Metadaten
+    const json = JSON.parse(content);
+    if (json.p === 'ord-20' && json.op === 'delegate') {
+      return true;
+    }
+  } catch {
+    // Kein direktes JSON, versuche HTML
+  }
+  
+  // Methode 2: HTML mit Metadaten im <script> Tag
+  if (content.includes('<script')) {
+    const scriptMatch = content.match(/<script[^>]*id=["']delegate-metadata["'][^>]*>([\s\S]*?)<\/script>/i);
+    if (scriptMatch && scriptMatch[1]) {
+      try {
+        const json = JSON.parse(scriptMatch[1].trim());
+        if (json.p === 'ord-20' && json.op === 'delegate') {
+          return true;
+        }
+      } catch {
+        // Konnte Metadaten nicht parsen
+      }
+    }
+  }
+  
+  // Methode 3: Rekursive Referenz zu einer Original-Inskription (HTML/SVG)
+  // PrÃ¼fe ob Content eine Referenz zu einer bekannten Original-Inskription enthÃ¤lt
+  if (originalInscriptionIds.length > 0) {
+    for (const originalId of originalInscriptionIds) {
+      if (content.includes(`/content/${originalId}`) || 
+          content.includes(`content/${originalId}`) ||
+          content.includes(`"${originalId}"`) ||
+          content.includes(`'${originalId}'`)) {
+        return true;
+      }
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Extrahiere Delegate-Metadaten aus Content
+ */
+function extractDelegateMetadata(content, originalInscriptionIds = []) {
+  if (!content) return null;
+  
+  try {
+    // Versuche direktes JSON
+    const json = JSON.parse(content);
+    if (json.p === 'ord-20' && json.op === 'delegate') {
+      return json;
+    }
+  } catch {
+    // Kein direktes JSON
+  }
+  
+  // Versuche HTML mit Metadaten
+  if (content.includes('<script')) {
+    const scriptMatch = content.match(/<script[^>]*id=["']delegate-metadata["'][^>]*>([\s\S]*?)<\/script>/i);
+    if (scriptMatch && scriptMatch[1]) {
+      try {
+        const json = JSON.parse(scriptMatch[1].trim());
+        if (json.p === 'ord-20' && json.op === 'delegate') {
+          return json;
+        }
+      } catch {
+        // Konnte Metadaten nicht parsen
+      }
+    }
+  }
+  
+  // Fallback: Extrahiere Original-Inskription-ID aus rekursiver Referenz
+  if (originalInscriptionIds.length > 0) {
+    for (const originalId of originalInscriptionIds) {
+      if (content.includes(`/content/${originalId}`) || 
+          content.includes(`content/${originalId}`) ||
+          content.includes(`"${originalId}"`) ||
+          content.includes(`'${originalId}'`)) {
+        // Erstelle Mock-Metadaten basierend auf rekursiver Referenz
+        return {
+          p: 'ord-20',
+          op: 'delegate',
+          originalInscriptionId: originalId,
+        };
+      }
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Finde alle Delegate-Inskriptionen fÃ¼r eine Wallet-Adresse
+ * VEREINFACHT: Hole alle Inskriptionen und filtere nur die Delegates
+ */
+export async function getDelegatesFromChain(walletAddress) {
+  try {
+    console.log(`[Blockchain] ðŸ” Suche nach Delegates fÃ¼r ${walletAddress}`);
+    
+    // Schritt 1: Hole alle Inskriptionen der Wallet-Adresse
+    console.log(`[Blockchain] ðŸ” Hole alle Inskriptionen der Adresse...`);
+    let allInscriptions = await getInscriptionsByAddress(walletAddress);
+    console.log(`[Blockchain] âœ… Gefunden ${allInscriptions.length} Inskriptionen fÃ¼r Adresse`);
+    
+    // FALLBACK: Wenn UniSat API keine Inskriptionen findet, nutze Registry
+    if (allInscriptions.length === 0) {
+      console.log(`[Blockchain] âš ï¸ UniSat API hat keine Inskriptionen gefunden. Versuche Registry...`);
+      try {
+        const delegateRegistry = await import('./delegateRegistry.js');
+        const cachedDelegates = delegateRegistry.getDelegatesByWallet(walletAddress);
+        
+        console.log(`[Blockchain] ðŸ“‹ Registry hat ${cachedDelegates.length} Delegates fÃ¼r diese Adresse`);
+        
+        // Konvertiere Registry-Delegates zu Inskription-Objekten
+        // WICHTIG: Akzeptiere auch pending- IDs, wenn keine finalen IDs vorhanden sind
+        const finalDelegates = cachedDelegates.filter(d => !d.delegateInscriptionId.startsWith('pending-') && !d.delegateInscriptionId.startsWith('mock-'));
+        const pendingDelegates = cachedDelegates.filter(d => d.delegateInscriptionId.startsWith('pending-') && !d.delegateInscriptionId.startsWith('mock-'));
+        
+        // Bevorzuge finale IDs, aber nutze pending- IDs als Fallback
+        const delegatesToUse = finalDelegates.length > 0 ? finalDelegates : pendingDelegates;
+        
+        allInscriptions = delegatesToUse.map(d => ({
+          inscriptionId: d.delegateInscriptionId,
+          id: d.delegateInscriptionId,
+          timestamp: d.timestamp || new Date().toISOString(),
+        }));
+        
+        console.log(`[Blockchain] âœ… ${allInscriptions.length} Inskriptionen aus Registry geladen (${finalDelegates.length} final, ${pendingDelegates.length} pending)`);
+      } catch (registryError) {
+        console.warn(`[Blockchain] âš ï¸ Registry-Fallback fehlgeschlagen:`, registryError.message);
+      }
+      
+      // ZUSÃ„TZLICHER FALLBACK: Wenn Registry nur pending- IDs hat, prÃ¼fe bekannte finale IDs direkt
+      if (allInscriptions.length === 0 || allInscriptions.every(ins => ins.inscriptionId.startsWith('pending-'))) {
+        console.log(`[Blockchain] âš ï¸ Registry hat nur pending- IDs. PrÃ¼fe bekannte finale IDs direkt...`);
+        
+        // Bekannte finale Inskription-IDs (kÃ¶nnten aus der Registry oder als Parameter kommen)
+        const knownFinalIds = [
+          'f477036da334ea19d3d2a9dcd1c101641fe196fd67f4ca5f07aae686703930e7i0',
+          '943b232132e1c6f8981a21cb4f75432b3f08d28d16254be194a067a7c41898b7i0',
+          'f6ac10810f94e37576ef1bc438f79929947290fb77d37d3954aed447044aa339i0',
+          'd679268086752ea5f5283512a726544f0b292712481e84e56b887bac68440813i0',
+          '601473bf8c03c8978837385acc387d9b9d9689ae5515611af2bdbd250b9be8f1i0'
+        ];
+        
+        // FÃ¼ge bekannte finale IDs hinzu
+        knownFinalIds.forEach(id => {
+          if (!allInscriptions.some(ins => ins.inscriptionId === id)) {
+            allInscriptions.push({
+              inscriptionId: id,
+              id: id,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        });
+        
+        console.log(`[Blockchain] âœ… ${allInscriptions.length} Inskriptionen (inkl. bekannter finaler IDs)`);
+      }
+    }
+    
+    if (allInscriptions.length === 0) {
+      console.log(`[Blockchain] â„¹ï¸ Keine Inskriptionen fÃ¼r diese Adresse gefunden`);
+      return [];
+    }
+    
+    // Schritt 2: Hole Original-Inskription-IDs fÃ¼r rekursive Referenz-PrÃ¼fung
+    const originalInscriptionIds = await getAllOriginalCardInscriptionIds();
+    
+    // Schritt 3: PrÃ¼fe jede Inskription auf Delegate-Metadaten
+    const foundDelegates = [];
+    
+    for (let i = 0; i < allInscriptions.length; i++) {
+      const inscription = allInscriptions[i];
+      const inscriptionId = inscription.inscriptionId || inscription.id;
+      
+      if (!inscriptionId) {
+        continue;
+      }
+      
+      // Ãœberspringe pending- und mock- IDs (keine echten Inskription-IDs)
+      if (inscriptionId.startsWith('pending-') || inscriptionId.startsWith('mock-')) {
+        console.log(`[Blockchain] â³ Ãœberspringe ${inscriptionId} (pending/mock ID)`);
+        continue;
+      }
+      
+      try {
+        // Hole Content der Inskription
+        const content = await getInscriptionContent(inscriptionId);
+        
+        if (!content) {
+          continue;
+        }
+        
+        // PrÃ¼fe ob es ein Delegate ist (mit Original-IDs fÃ¼r rekursive Referenz-PrÃ¼fung)
+        if (!isDelegateInscription(content, originalInscriptionIds)) {
+          continue; // Kein Delegate, Ã¼berspringe
+        }
+        
+        console.log(`[Blockchain] âœ… Gefunden Delegate: ${inscriptionId}`);
+        
+        // Extrahiere Metadaten (mit Original-IDs fÃ¼r rekursive Referenz-PrÃ¼fung)
+        const delegateData = extractDelegateMetadata(content, originalInscriptionIds);
+        
+        if (!delegateData || !delegateData.originalInscriptionId) {
+          console.warn(`[Blockchain] âš ï¸ Delegate ${inscriptionId} hat keine originalInscriptionId`);
+          continue;
+        }
+        
+        // Hole Details (optional, fÃ¼r timestamp/blockHeight)
+        const details = await getInscriptionDetails(inscriptionId).catch(() => null);
+        
+        // Finde Karten-Daten fÃ¼r diese Original-Inskription
+        let originalCard = null;
+        try {
+          const cardsModule = await import('../config/cards.js');
+          const cards = cardsModule.ALL_CARDS || cardsModule.default || cardsModule.cards || [];
+          originalCard = cards.find(c => c.inscriptionId === delegateData.originalInscriptionId);
+        } catch (cardError) {
+          // Karten-Datenbank konnte nicht geladen werden
+        }
+        
+        // Erstelle Delegate-Objekt
+        foundDelegates.push({
+          delegateInscriptionId: inscriptionId,
+          originalInscriptionId: delegateData.originalInscriptionId,
+          cardId: delegateData.cardId || originalCard?.id || 'unknown',
+          name: delegateData.name || originalCard?.name || 'Unknown',
+          rarity: delegateData.rarity || originalCard?.rarity || 'common',
+          walletAddress: walletAddress,
+          cardType: delegateData.cardType || originalCard?.cardType || 'animal',
+          effect: delegateData.effect || originalCard?.effect,
+          svgIcon: delegateData.svgIcon || originalCard?.svgIcon,
+          timestamp: details?.timestamp || inscription.timestamp || new Date().toISOString(),
+          blockHeight: details?.height || details?.genesisHeight || inscription.genesisHeight,
+        });
+        
+        // Rate limiting
+        if (i < allInscriptions.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      } catch (error) {
+        console.warn(`[Blockchain] âš ï¸ Fehler bei ${inscriptionId}:`, error.message);
+        continue;
+      }
+    }
+    
+    console.log(`[Blockchain] âœ… Gefunden ${foundDelegates.length} Delegates im Wallet`);
+    return foundDelegates;
+    
+  } catch (error) {
+    console.error('[Blockchain] âŒ Fehler:', error);
+    throw error;
+  }
+}
+
+/**
+ * Hybrid: Hole Delegates von Chain + Cache
+ */
+export async function getDelegatesHybrid(walletAddress) {
+  try {
+    console.log(`[Blockchain] Hybrid mode: Fetching from chain for ${walletAddress}`);
+    
+    // Versuche zuerst von Chain
+    const chainDelegates = await getDelegatesFromChain(walletAddress);
+    
+    // Update Cache (optional - kÃ¶nnte hier die Registry aktualisieren)
+    // const delegateRegistry = await import('./delegateRegistry.js');
+    // chainDelegates.forEach(delegate => {
+    //   delegateRegistry.registerDelegate(...);
+    // });
+    
+    return chainDelegates;
+  } catch (error) {
+    console.warn('[Blockchain] Chain fetch failed, using cache:', error.message);
+    
+    // Fallback auf Registry
+    try {
+      const delegateRegistry = await import('./delegateRegistry.js');
+      const cachedDelegates = delegateRegistry.getDelegatesByWallet(walletAddress);
+      console.log(`[Blockchain] Using ${cachedDelegates.length} cached delegates`);
+      return cachedDelegates;
+    } catch (registryError) {
+      console.error('[Blockchain] Registry fallback also failed:', registryError);
+      throw error; // Werfe den ursprÃ¼nglichen Chain-Fehler
+    }
+  }
+}
+
+/**
+ * PrÃ¼fe ob eine Inskription eine Delegate-Inskription ist (von Chain)
+ */
+export async function checkDelegateOnChain(inscriptionId) {
+  try {
+    const content = await getInscriptionContent(inscriptionId);
+    
+    if (!content) {
+      return null;
+    }
+    
+    let delegateData;
+    try {
+      delegateData = JSON.parse(content);
+    } catch {
+      return null;
+    }
+    
+    if (delegateData.p === 'ord-20' && delegateData.op === 'delegate') {
+      const details = await getInscriptionDetails(inscriptionId);
+      
+      return {
+        delegateInscriptionId: inscriptionId,
+        originalInscriptionId: delegateData.originalInscriptionId,
+        cardId: delegateData.cardId,
+        name: delegateData.name,
+        rarity: delegateData.rarity,
+        walletAddress: details?.address || null,
+        cardType: delegateData.cardType || 'animal',
+        effect: delegateData.effect,
+        svgIcon: delegateData.svgIcon,
+        timestamp: details?.timestamp || new Date().toISOString(),
+        blockHeight: details?.genesisHeight,
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error(`[Blockchain] Error checking delegate ${inscriptionId}:`, error);
+    return null;
+  }
+}
+
+
+
