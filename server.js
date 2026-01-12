@@ -4786,18 +4786,161 @@ app.post('/api/trades/offers/:offerId/accept', async (req, res) => {
     console.log(`[Trades] Accepting offer ${offerId} by ${taker}`);
     console.log(`[Trades] Offer: ${offer.offerCards.length} cards, Request: ${offer.requestCards.length} cards`);
 
-    // TODO: Hier würde die eigentliche Transaktion durchgeführt werden
-    // Für jetzt markieren wir das Offer als accepted
-    tradeOfferService.updateTradeOfferStatus(offerId, 'accepted');
+    // Prüfe ob walletType angegeben ist
+    if (!walletType || (walletType !== 'unisat' && walletType !== 'xverse')) {
+      return res.status(400).json({ error: 'Invalid or missing walletType. Must be "unisat" or "xverse"' });
+    }
+
+    // Hole Taker's Delegates um die tatsächlichen Delegate-IDs zu finden
+    const takerDelegates = await blockchainDelegateService.getDelegatesHybrid(taker);
+    console.log(`[Trades] Found ${takerDelegates.length} delegates for taker ${taker}`);
+
+    // Finde Taker's Delegates die zu den requestCards passen
+    const takerCardsToTransfer = [];
+    for (const requestedOriginalId of offer.requestCards) {
+      // Finde einen Delegate des Takers, der auf diese Original-ID verweist
+      const matchingDelegate = takerDelegates.find(
+        (d) => d.originalInscriptionId === requestedOriginalId
+      );
+      if (matchingDelegate) {
+        takerCardsToTransfer.push(matchingDelegate.inscriptionId);
+      } else {
+        return res.status(400).json({ 
+          error: `Taker does not own a delegate for requested card: ${requestedOriginalId}` 
+        });
+      }
+    }
+
+    console.log(`[Trades] Taker will transfer ${takerCardsToTransfer.length} cards to maker`);
+    console.log(`[Trades] Maker will transfer ${offer.offerCards.length} cards to taker`);
+
+    // Erstelle PSBTs für beide Seiten des Trades
+    const feeRate = 5; // Standard Fee Rate für Trades
+    const psbts = [];
+
+    // 1. PSBTs für Maker's Karten → Taker
+    for (const makerCardId of offer.offerCards) {
+      try {
+        const psbtData = await ordinalTransferService.preparePresignedTransfer(
+          makerCardId,
+          taker, // Maker's Karten gehen an Taker
+          feeRate
+        );
+        psbts.push({
+          inscriptionId: makerCardId,
+          recipient: taker,
+          psbtBase64: psbtData.psbtBase64,
+          from: 'maker',
+        });
+      } catch (error) {
+        console.error(`[Trades] Error creating PSBT for maker card ${makerCardId}:`, error);
+        return res.status(500).json({ 
+          error: `Failed to create PSBT for maker card ${makerCardId}: ${error.message}` 
+        });
+      }
+    }
+
+    // 2. PSBTs für Taker's Karten → Maker
+    for (const takerCardId of takerCardsToTransfer) {
+      try {
+        const psbtData = await ordinalTransferService.preparePresignedTransfer(
+          takerCardId,
+          offer.maker, // Taker's Karten gehen an Maker
+          feeRate
+        );
+        psbts.push({
+          inscriptionId: takerCardId,
+          recipient: offer.maker,
+          psbtBase64: psbtData.psbtBase64,
+          from: 'taker',
+        });
+      } catch (error) {
+        console.error(`[Trades] Error creating PSBT for taker card ${takerCardId}:`, error);
+        return res.status(500).json({ 
+          error: `Failed to create PSBT for taker card ${takerCardId}: ${error.message}` 
+        });
+      }
+    }
+
+    console.log(`[Trades] ✅ Created ${psbts.length} PSBTs for trade ${offerId}`);
     
-    console.log(`[Trades] ✅ Trade offer ${offerId} accepted by ${taker}`);
+    // Markiere Offer als "pending" (wird erst auf "accepted" gesetzt nach erfolgreichem Broadcast)
+    tradeOfferService.updateTradeOfferStatus(offerId, 'pending');
+    
     res.json({ 
       success: true, 
-      message: 'Trade offer accepted. Transaction will be processed.',
+      requiresSigning: true,
+      psbts: psbts,
+      offerId: offerId,
+      message: 'PSBTs created. Please sign all PSBTs in your wallet and call /api/trades/offers/:offerId/broadcast',
       offer: tradeOfferService.getTradeOffer(offerId)
     });
   } catch (error) {
     console.error('[Trades] ❌ Error accepting offer:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+// Broadcast signierte PSBTs für Trade
+app.post('/api/trades/offers/:offerId/broadcast', async (req, res) => {
+  try {
+    const { offerId } = req.params;
+    const { signedPsbts } = req.body; // Array von { inscriptionId, signedPsbtHex }
+    
+    if (!signedPsbts || !Array.isArray(signedPsbts) || signedPsbts.length === 0) {
+      return res.status(400).json({ error: 'Missing required field: signedPsbts (array)' });
+    }
+
+    const offer = tradeOfferService.getTradeOffer(offerId);
+    if (!offer) {
+      return res.status(404).json({ error: 'Trade offer not found' });
+    }
+
+    if (offer.status !== 'pending') {
+      return res.status(400).json({ error: `Trade offer is not in pending state (status: ${offer.status})` });
+    }
+
+    console.log(`[Trades] Broadcasting ${signedPsbts.length} signed transactions for trade ${offerId}`);
+
+    // Broadcast alle signierten PSBTs
+    const txids = [];
+    for (const signedPsbt of signedPsbts) {
+      if (!signedPsbt.inscriptionId || !signedPsbt.signedPsbtHex) {
+        return res.status(400).json({ error: 'Each signedPsbt must have inscriptionId and signedPsbtHex' });
+      }
+
+      try {
+        const transferResult = await ordinalTransferService.transferOrdinal(
+          signedPsbt.inscriptionId,
+          '', // recipientAddress nicht benötigt für Broadcast
+          null, // feeRate nicht benötigt für Broadcast
+          signedPsbt.signedPsbtHex
+        );
+        txids.push({
+          inscriptionId: signedPsbt.inscriptionId,
+          txid: transferResult.txid,
+        });
+        console.log(`[Trades] ✅ Broadcasted transaction for ${signedPsbt.inscriptionId}: ${transferResult.txid}`);
+      } catch (error) {
+        console.error(`[Trades] ❌ Error broadcasting transaction for ${signedPsbt.inscriptionId}:`, error);
+        return res.status(500).json({ 
+          error: `Failed to broadcast transaction for ${signedPsbt.inscriptionId}: ${error.message}` 
+        });
+      }
+    }
+
+    // Markiere Offer als "accepted" nach erfolgreichem Broadcast
+    tradeOfferService.updateTradeOfferStatus(offerId, 'accepted');
+    
+    console.log(`[Trades] ✅ Trade ${offerId} completed successfully`);
+    res.json({ 
+      success: true, 
+      message: 'Trade completed successfully',
+      txids: txids,
+      offer: tradeOfferService.getTradeOffer(offerId)
+    });
+  } catch (error) {
+    console.error('[Trades] ❌ Error broadcasting trade:', error);
     res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
