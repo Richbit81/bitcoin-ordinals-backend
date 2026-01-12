@@ -104,6 +104,17 @@ export async function createTables() {
       );
     `);
 
+    // Migration Status Tabelle (verhindert mehrfache Migrationen)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS migration_status (
+        id VARCHAR(255) PRIMARY KEY,
+        migration_name VARCHAR(255) NOT NULL UNIQUE,
+        completed BOOLEAN DEFAULT false,
+        completed_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     // Indexes für bessere Performance
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_point_shop_items_active ON point_shop_items(active);

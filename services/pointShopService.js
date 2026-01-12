@@ -110,7 +110,8 @@ function itemToRow(item) {
 }
 
 /**
- * Migriere JSON-Daten zu Datenbank (einmalig)
+ * Migriere JSON-Daten zu Datenbank (einmalig, bombensicher)
+ * WICHTIG: Läuft nur einmal, auch bei Redeploy!
  */
 let migrationDone = false;
 export async function migrateJSONToDB() {
@@ -120,48 +121,93 @@ export async function migrateJSONToDB() {
 
   try {
     const pool = getPool();
-    const jsonData = loadPointShopJSON();
+    const MIGRATION_NAME = 'point_shop_json_to_db_v1';
     
-    if (jsonData.items.length === 0) {
-      console.log('[PointShop] 🔄 Migration: Keine JSON-Daten zum Migrieren');
+    // Prüfe ob Migration bereits durchgeführt wurde (BOMBENSICHER)
+    const migrationCheck = await pool.query(
+      'SELECT completed FROM migration_status WHERE migration_name = $1',
+      [MIGRATION_NAME]
+    );
+    
+    if (migrationCheck.rows.length > 0 && migrationCheck.rows[0].completed === true) {
+      console.log('[PointShop] ✅ Migration bereits durchgeführt, überspringe');
       migrationDone = true;
       return;
     }
 
-    // Prüfe ob bereits Daten in DB sind
+    const jsonData = loadPointShopJSON();
+    
+    if (jsonData.items.length === 0) {
+      console.log('[PointShop] 🔄 Migration: Keine JSON-Daten zum Migrieren');
+      // Markiere Migration als abgeschlossen, auch wenn keine Daten vorhanden
+      await pool.query(`
+        INSERT INTO migration_status (migration_name, completed, completed_at)
+        VALUES ($1, true, $2)
+        ON CONFLICT (migration_name) DO UPDATE SET completed = true, completed_at = $2
+      `, [MIGRATION_NAME, new Date()]);
+      migrationDone = true;
+      return;
+    }
+
+    // Prüfe ob bereits Daten in DB sind (zusätzliche Sicherheit)
     const checkResult = await pool.query('SELECT COUNT(*) as count FROM point_shop_items');
-    if (parseInt(checkResult.rows[0].count) > 0) {
-      console.log('[PointShop] 🔄 Migration: Datenbank bereits gefüllt, überspringe Migration');
+    const existingCount = parseInt(checkResult.rows[0].count);
+    
+    if (existingCount > 0) {
+      console.log(`[PointShop] ⚠️ Migration: Datenbank enthält bereits ${existingCount} Items`);
+      console.log('[PointShop] ⚠️ Migration: Überspringe Migration, um Datenverlust zu vermeiden');
+      // Markiere Migration als abgeschlossen, um zukünftige Versuche zu verhindern
+      await pool.query(`
+        INSERT INTO migration_status (migration_name, completed, completed_at)
+        VALUES ($1, true, $2)
+        ON CONFLICT (migration_name) DO UPDATE SET completed = true, completed_at = $2
+      `, [MIGRATION_NAME, new Date()]);
       migrationDone = true;
       return;
     }
 
     console.log(`[PointShop] 🔄 Migration: Migriere ${jsonData.items.length} Items von JSON zu DB...`);
 
-    // Migriere alle Items
-    for (const item of jsonData.items) {
-      const row = itemToRow(item);
-      await pool.query(`
-        INSERT INTO point_shop_items (
-          id, item_type, title, description, points_cost, active, created_at, updated_at,
-          delegate_inscription_id, original_inscription_id,
-          inscription_ids, current_index, total_count, series_title, inscription_item_type
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-        ON CONFLICT (id) DO NOTHING
-      `, [
-        row.id, row.item_type, row.title, row.description, row.points_cost, row.active,
-        row.created_at, row.updated_at,
-        row.delegate_inscription_id || null, row.original_inscription_id || null,
-        row.inscription_ids || null, row.current_index || 0, row.total_count || null,
-        row.series_title || null, row.inscription_item_type || null
-      ]);
-    }
+    // Starte Transaktion für atomare Migration
+    await pool.query('BEGIN');
+    try {
+      // Migriere alle Items
+      for (const item of jsonData.items) {
+        const row = itemToRow(item);
+        await pool.query(`
+          INSERT INTO point_shop_items (
+            id, item_type, title, description, points_cost, active, created_at, updated_at,
+            delegate_inscription_id, original_inscription_id,
+            inscription_ids, current_index, total_count, series_title, inscription_item_type
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+          ON CONFLICT (id) DO NOTHING
+        `, [
+          row.id, row.item_type, row.title, row.description, row.points_cost, row.active,
+          row.created_at, row.updated_at,
+          row.delegate_inscription_id || null, row.original_inscription_id || null,
+          row.inscription_ids || null, row.current_index || 0, row.total_count || null,
+          row.series_title || null, row.inscription_item_type || null
+        ]);
+      }
 
-    console.log(`[PointShop] ✅ Migration: ${jsonData.items.length} Items erfolgreich migriert`);
-    migrationDone = true;
+      // Markiere Migration als erfolgreich abgeschlossen
+      await pool.query(`
+        INSERT INTO migration_status (migration_name, completed, completed_at)
+        VALUES ($1, true, $2)
+        ON CONFLICT (migration_name) DO UPDATE SET completed = true, completed_at = $2
+      `, [MIGRATION_NAME, new Date()]);
+
+      await pool.query('COMMIT');
+      console.log(`[PointShop] ✅ Migration: ${jsonData.items.length} Items erfolgreich migriert`);
+      migrationDone = true;
+    } catch (error) {
+      await pool.query('ROLLBACK');
+      throw error;
+    }
   } catch (error) {
     console.error('[PointShop] ❌ Migration: Fehler:', error);
     // Migration fehlgeschlagen, aber nicht kritisch - verwende JSON weiter
+    // Markiere Migration NICHT als abgeschlossen, damit sie beim nächsten Mal erneut versucht wird
   }
 }
 
