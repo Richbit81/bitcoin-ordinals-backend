@@ -3357,26 +3357,87 @@ app.post('/api/point-shop/transfer', async (req, res) => {
       console.log(`[PointShop] ✅ Found presigned transaction for ${inscriptionIdToTransfer}`);
     }
     
-    // Transfer über PSBT (mit oder ohne Pre-Signing)
-    const transferResult = await ordinalTransferService.transferOrdinal(
+    // Wenn Pre-Signed TX vorhanden: Direkt broadcasten (Xverse Pre-Signing Flow - UNVERÄNDERT)
+    if (presignedTxHex) {
+      const transferResult = await ordinalTransferService.transferOrdinal(
+        inscriptionIdToTransfer,
+        recipientAddress,
+        parseInt(feeRate, 10),
+        presignedTxHex
+      );
+      
+      console.log(`[PointShop] ✅ Original ordinal ${inscriptionIdToTransfer} transferred to ${recipientAddress} (Pre-Signed)`);
+      console.log(`[PointShop] 📝 Transaction ID: ${transferResult.txid}`);
+      
+      return res.json({
+        success: true,
+        message: 'Transfer completed successfully',
+        txid: transferResult.txid,
+        inscriptionId: inscriptionIdToTransfer,
+        presigned: true,
+      });
+    }
+    
+    // Wenn keine Pre-Signed TX: PSBT erstellen und zurückgeben (für Frontend-Signatur - UniSat & Xverse)
+    console.log(`[PointShop] 🔄 No pre-signed transaction found, creating PSBT for frontend signing...`);
+    const psbtData = await ordinalTransferService.preparePresignedTransfer(
       inscriptionIdToTransfer,
       recipientAddress,
-      parseInt(feeRate, 10),
-      presignedTxHex
+      parseInt(feeRate, 10)
     );
     
-    console.log(`[PointShop] ✅ Original ordinal ${inscriptionIdToTransfer} transferred to ${recipientAddress}`);
-    console.log(`[PointShop] 📝 Transaction ID: ${transferResult.txid}`);
+    console.log(`[PointShop] ✅ PSBT created for ${inscriptionIdToTransfer}, returning to frontend for signing`);
     
     res.json({
       success: true,
-      message: 'Transfer completed successfully',
-      txid: transferResult.txid,
+      requiresSigning: true,
+      psbtBase64: psbtData.psbtBase64,
       inscriptionId: inscriptionIdToTransfer,
-      presigned: !!presignedTxHex,
+      recipientAddress: recipientAddress,
+      feeRate: parseInt(feeRate, 10),
+      message: 'PSBT created. Please sign in your wallet and call /api/point-shop/transfer/broadcast',
     });
   } catch (error) {
     console.error('[PointShop] ❌ Transfer error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+// Broadcast signierte PSBT (für normale Transfers ohne Pre-Signing)
+app.post('/api/point-shop/transfer/broadcast', async (req, res) => {
+  try {
+    const { inscriptionId, signedPsbtHex, signedPsbtBase64 } = req.body;
+    
+    if (!inscriptionId || (!signedPsbtHex && !signedPsbtBase64)) {
+      return res.status(400).json({ error: 'Missing required fields: inscriptionId and signedPsbtHex or signedPsbtBase64' });
+    }
+
+    // Konvertiere Base64 zu Hex falls nötig
+    let signedTxHex = signedPsbtHex;
+    if (!signedTxHex && signedPsbtBase64) {
+      // Konvertiere Base64 zu Hex
+      const binaryString = Buffer.from(signedPsbtBase64, 'base64');
+      signedTxHex = binaryString.toString('hex');
+    }
+
+    console.log(`[PointShop] Broadcasting signed transaction for ${inscriptionId}`);
+    const transferResult = await ordinalTransferService.transferOrdinal(
+      inscriptionId,
+      '', // recipientAddress nicht benötigt für Broadcast
+      null, // feeRate nicht benötigt für Broadcast
+      signedTxHex
+    );
+    
+    console.log(`[PointShop] ✅ Transaction broadcasted: ${transferResult.txid}`);
+    
+    res.json({
+      success: true,
+      message: 'Transaction broadcasted successfully',
+      txid: transferResult.txid,
+      inscriptionId: inscriptionId,
+    });
+  } catch (error) {
+    console.error('[PointShop] ❌ Broadcast error:', error);
     res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
