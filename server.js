@@ -4900,6 +4900,8 @@ app.post('/api/trades/offers/:offerId/broadcast', async (req, res) => {
       return res.status(400).json({ error: `Trade offer is not in pending state (status: ${offer.status})` });
     }
 
+    const { partial, makerPsbtsCount } = req.body;
+    
     console.log(`[Trades] Broadcasting ${signedPsbts.length} signed transactions for trade ${offerId}`);
 
     // Broadcast alle signierten PSBTs
@@ -4929,7 +4931,22 @@ app.post('/api/trades/offers/:offerId/broadcast', async (req, res) => {
       }
     }
 
-    // Markiere Offer als "accepted" nach erfolgreichem Broadcast
+    // Wenn partiell (Maker muss noch signieren), markiere als "pending_maker"
+    // Sonst als "accepted"
+    if (partial && makerPsbtsCount > 0) {
+      tradeOfferService.updateTradeOfferStatus(offerId, 'pending_maker');
+      console.log(`[Trades] ⚠️ Trade ${offerId} partially completed. Maker must sign ${makerPsbtsCount} PSBTs.`);
+      return res.json({ 
+        success: true, 
+        message: `Trade partially completed. Maker must sign ${makerPsbtsCount} PSBTs to complete the trade.`,
+        txids: txids,
+        partial: true,
+        makerPsbtsCount: makerPsbtsCount,
+        offer: tradeOfferService.getTradeOffer(offerId)
+      });
+    }
+
+    // Vollständiger Trade abgeschlossen
     tradeOfferService.updateTradeOfferStatus(offerId, 'accepted');
     
     console.log(`[Trades] ✅ Trade ${offerId} completed successfully`);
