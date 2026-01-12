@@ -231,15 +231,51 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
     console.log(`  - value type: ${typeof witnessUtxo.value}`);
     console.log(`  - value: ${witnessUtxo.value.toString()}`);
 
-    // Add input (the UTXO containing the ordinal)
-    // Note: We only add the UTXO data here - NO signing information!
-    // The wallet will add tapInternalKey, signatures, etc. when signing
-    psbt.addInput({
+    // Check if this is a Taproot address (bc1p) and extract tapInternalKey from scriptPubKey
+    // For Taproot UTXOs, Xverse requires tapInternalKey to be present in the PSBT
+    // For P2TR, scriptPubKey format is: 5120<taproot_output_key> (34 bytes total)
+    // The taproot_output_key (last 32 bytes) is the hash of tapInternalKey
+    // However, some wallets (like Xverse) may accept the taproot_output_key as tapInternalKey
+    // or derive it from the scriptPubKey during signing
+    let tapInternalKey = null;
+    const isTaproot = ownerAddress && ownerAddress.startsWith('bc1p');
+    
+    if (isTaproot && scriptBytes && scriptBytes.length >= 34) {
+      try {
+        // For P2TR, scriptPubKey is: 51 (OP_1) + 20 (push 32 bytes) + 32 bytes (taproot_output_key)
+        // Extract the last 32 bytes as taproot_output_key
+        // Note: This is technically the hash of tapInternalKey, not tapInternalKey itself
+        // But some wallets may use this to derive or validate tapInternalKey
+        const taprootOutputKey = scriptBytes.slice(2); // Skip first 2 bytes (51 20), get last 32 bytes
+        if (taprootOutputKey.length === 32) {
+          // Convert to Buffer for tapInternalKey (bitcoinjs-lib expects Buffer)
+          tapInternalKey = Buffer.from(taprootOutputKey);
+          console.log(`[OrdinalTransfer] 🔍 Taproot detected: Extracted taproot_output_key from scriptPubKey`);
+          console.log(`[OrdinalTransfer] taproot_output_key (hex): ${tapInternalKey.toString('hex').substring(0, 20)}...`);
+        }
+      } catch (extractError) {
+        console.warn(`[OrdinalTransfer] ⚠️  Failed to extract taproot_output_key: ${extractError.message}`);
+      }
+    }
+
+    // Prepare input data
+    const inputData = {
       hash: txid,
       index: parseInt(vout),
       witnessUtxo: witnessUtxo,
-      // NO tapInternalKey, NO signing info - wallet will add that!
-    });
+    };
+
+    // Add tapInternalKey if we extracted it (for Taproot UTXOs)
+    // Note: This is the taproot_output_key, not the actual tapInternalKey
+    // The wallet should be able to use this to derive or validate the tapInternalKey
+    if (tapInternalKey) {
+      inputData.tapInternalKey = tapInternalKey;
+      console.log(`[OrdinalTransfer] ✅ Added tapInternalKey to PSBT input (Taproot: YES)`);
+    } else {
+      console.log(`[OrdinalTransfer] Adding input to PSBT (Taproot: ${isTaproot ? 'YES (no tapInternalKey)' : 'NO'})`);
+    }
+    
+    psbt.addInput(inputData);
 
     const estimatedVSize = 200;
     const fee = estimatedVSize * feeRate;

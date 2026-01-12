@@ -4776,9 +4776,9 @@ app.get('/api/admin/trades', requireAdmin, (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n${'═'.repeat(80)}`);
-  console.log(`🚀 SERVER START - VERSION: ArrayBuffer-Uint8Array-Fix-v2`);
-  console.log(`📅 DEPLOYED: 2025-01-12 00:00`);
-  console.log(`🔧 PSBT-FIX: ArrayBuffer-basierte Uint8Array-Erstellung`);
+  console.log(`🚀 SERVER START - VERSION: Taproot-tapInternalKey-Fix-v1`);
+  console.log(`📅 DEPLOYED: 2025-01-12 12:00`);
+  console.log(`🔧 PSBT-FIX: Taproot tapInternalKey aus scriptPubKey extrahiert`);
   console.log(`${'═'.repeat(80)}`);
   console.log(`📍 Port: ${PORT}`);
   console.log(`🌐 URL: http://localhost:${PORT}`);
