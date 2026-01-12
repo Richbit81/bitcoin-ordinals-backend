@@ -3758,6 +3758,75 @@ app.delete('/api/point-shop/admin/item/:itemId', async (req, res) => {
   }
 });
 
+// Admin: Zeige ALLE Items (auch inaktive) - für Debugging/Wiederherstellung
+app.get('/api/point-shop/admin/all-items', requireAdmin, async (req, res) => {
+  try {
+    const { getPool, isDatabaseAvailable } = await import('./services/db.js');
+    
+    if (isDatabaseAvailable()) {
+      const pool = getPool();
+      const result = await pool.query(
+        'SELECT * FROM point_shop_items ORDER BY created_at DESC'
+      );
+      
+      const items = result.rows.map(row => {
+        const item = {
+          id: row.id,
+          itemType: row.item_type,
+          title: row.title,
+          description: row.description || '',
+          pointsCost: row.points_cost,
+          active: row.active,
+          createdAt: row.created_at?.toISOString() || new Date().toISOString(),
+        };
+        
+        if (row.delegate_inscription_id) item.delegateInscriptionId = row.delegate_inscription_id;
+        if (row.original_inscription_id) item.originalInscriptionId = row.original_inscription_id;
+        
+        if (row.item_type === 'series') {
+          item.inscriptionIds = row.inscription_ids || [];
+          item.currentIndex = row.current_index || 0;
+          item.totalCount = row.total_count;
+          item.seriesTitle = row.series_title;
+        }
+        
+        return item;
+      });
+      
+      console.log(`[PointShop] 📊 Admin: ${items.length} Items gefunden (${items.filter(i => i.active).length} aktiv)`);
+      res.json({ items, total: items.length, active: items.filter(i => i.active).length });
+    } else {
+      res.status(500).json({ error: 'Database not available' });
+    }
+  } catch (error) {
+    console.error('[PointShop] ❌ Error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+// Admin: Reaktiviere alle Items
+app.post('/api/point-shop/admin/reactivate-all', requireAdmin, async (req, res) => {
+  try {
+    const { getPool, isDatabaseAvailable } = await import('./services/db.js');
+    
+    if (isDatabaseAvailable()) {
+      const pool = getPool();
+      const result = await pool.query(
+        'UPDATE point_shop_items SET active = true, updated_at = $1 WHERE active = false',
+        [new Date()]
+      );
+      
+      console.log(`[PointShop] ✅ Admin: ${result.rowCount} Items reaktiviert`);
+      res.json({ success: true, reactivated: result.rowCount });
+    } else {
+      res.status(500).json({ error: 'Database not available' });
+    }
+  } catch (error) {
+    console.error('[PointShop] ❌ Error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
 // Admin: Add Series Item (mehrere Inskriptionen → ein Item mit "1/N - N/N")
 app.post('/api/point-shop/admin/add-series', async (req, res) => {
   try {
