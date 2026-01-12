@@ -25,12 +25,17 @@ function loadPointShop() {
   if (fs.existsSync(POINT_SHOP_FILE)) {
     try {
       const data = fs.readFileSync(POINT_SHOP_FILE, 'utf-8');
-      return JSON.parse(data);
+      const parsed = JSON.parse(data);
+      console.log(`[PointShop] 📂 Loaded ${parsed.items.length} items from ${POINT_SHOP_FILE}`);
+      console.log(`[PointShop] 📊 Active items: ${parsed.items.filter(i => i.active).length}, Inactive: ${parsed.items.filter(i => !i.active).length}`);
+      return parsed;
     } catch (error) {
-      console.error('[PointShop] Error loading point shop file:', error);
+      console.error('[PointShop] ❌ Error loading point shop file:', error);
+      console.error('[PointShop] File path:', POINT_SHOP_FILE);
       return { items: [] };
     }
   }
+  console.warn(`[PointShop] ⚠️ Point shop file not found: ${POINT_SHOP_FILE}`);
   return { items: [] };
 }
 
@@ -39,9 +44,13 @@ function loadPointShop() {
  */
 function savePointShop(data) {
   try {
-    fs.writeFileSync(POINT_SHOP_FILE, JSON.stringify(data, null, 2));
+    const jsonData = JSON.stringify(data, null, 2);
+    fs.writeFileSync(POINT_SHOP_FILE, jsonData);
+    console.log(`[PointShop] 💾 Saved ${data.items.length} items to ${POINT_SHOP_FILE}`);
+    console.log(`[PointShop] 📊 Active items: ${data.items.filter(i => i.active).length}, Inactive: ${data.items.filter(i => !i.active).length}`);
   } catch (error) {
-    console.error('[PointShop] Error saving point shop file:', error);
+    console.error('[PointShop] ❌ Error saving point shop file:', error);
+    console.error('[PointShop] File path:', POINT_SHOP_FILE);
     throw error;
   }
 }
