@@ -16,6 +16,7 @@ import * as pointShopService from './services/pointShopService.js';
 import * as ordinalTransferService from './services/ordinalTransferService.js';
 import * as bitcoin from 'bitcoinjs-lib';
 import * as collectionService from './services/collectionService.js';
+import { initDatabase, createTables, isDatabaseAvailable } from './services/db.js';
 
 dotenv.config();
 
@@ -3237,9 +3238,9 @@ app.post('/api/points/add', (req, res) => {
 // ========== POINT SHOP ENDPOINTS ==========
 
 // Get all active items
-app.get('/api/point-shop/items', (req, res) => {
+app.get('/api/point-shop/items', async (req, res) => {
   try {
-    const items = pointShopService.getPointShopItems();
+    const items = await pointShopService.getPointShopItems();
     res.json({ items });
   } catch (error) {
     console.error('[PointShop] ❌ Error:', error);
@@ -3256,7 +3257,7 @@ app.post('/api/point-shop/mint', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const item = pointShopService.getPointShopItem(itemId);
+    const item = await pointShopService.getPointShopItem(itemId);
     if (!item) {
       return res.status(404).json({ error: 'Item not found' });
     }
@@ -3315,7 +3316,7 @@ app.post('/api/point-shop/transfer', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const item = pointShopService.getPointShopItem(itemId);
+    const item = await pointShopService.getPointShopItem(itemId);
     if (!item) {
       return res.status(404).json({ error: 'Item not found' });
     }
@@ -3439,12 +3440,12 @@ app.post('/api/point-shop/admin/save-presigned', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields: itemId, inscriptionId, signedTxHex' });
     }
 
-    const item = pointShopService.getPointShopItem(itemId);
-    if (!item) {
-      return res.status(404).json({ error: 'Item not found' });
-    }
+      const item = await pointShopService.getPointShopItem(itemId);
+      if (!item) {
+        return res.status(404).json({ error: 'Item not found' });
+      }
 
-    // Validiere signierte Transaktion
+      // Validiere signierte Transaktion
     try {
       const tx = bitcoin.Transaction.fromHex(signedTxHex);
       const txid = tx.getId();
@@ -3478,7 +3479,7 @@ app.post('/api/point-shop/admin/save-presigned', async (req, res) => {
     }
 
     // Speichere aktualisiertes Item
-    pointShopService.updatePointShopItem(itemId, item);
+    await pointShopService.updatePointShopItem(itemId, item);
     
     console.log(`[PointShop] ✅ Presigned transaction saved for item ${itemId}, inscription ${inscriptionId}`);
     res.json({ success: true, item });
@@ -3644,7 +3645,7 @@ app.post('/api/point-shop/admin/confirm-transfer', requireAdmin, async (req, res
     // Save to pointShopService if itemId is provided
     if (itemId && session.inscriptionId) {
       console.log(`[PointShop] Saving pre-signed transaction for item ${itemId}, inscription ${session.inscriptionId}`);
-      const item = pointShopService.getPointShopItem(itemId);
+      const item = await pointShopService.getPointShopItem(itemId);
       if (item) {
         if (item.itemType === 'series') {
           if (!item.presignedTxs) {
@@ -3661,7 +3662,7 @@ app.post('/api/point-shop/admin/confirm-transfer', requireAdmin, async (req, res
           item.signedTxHex = signedTxHex;
           item.presignedAt = new Date().toISOString();
         }
-        pointShopService.updatePointShopItem(itemId, item);
+        await pointShopService.updatePointShopItem(itemId, item);
       }
     }
 
@@ -3692,7 +3693,7 @@ app.post('/api/point-shop/admin/confirm-transfer', requireAdmin, async (req, res
 });
 
 // Admin: Add item
-app.post('/api/point-shop/admin/add', (req, res) => {
+app.post('/api/point-shop/admin/add', async (req, res) => {
   try {
     const { itemType, inscriptionId, title, description, pointsCost } = req.body;
     
@@ -3704,7 +3705,7 @@ app.post('/api/point-shop/admin/add', (req, res) => {
       return res.status(400).json({ error: 'Invalid itemType. Must be "delegate" or "original"' });
     }
 
-    const item = pointShopService.addPointShopItem(
+    const item = await pointShopService.addPointShopItem(
       inscriptionId,
       itemType,
       title,
@@ -3721,12 +3722,12 @@ app.post('/api/point-shop/admin/add', (req, res) => {
 });
 
 // Admin: Update item
-app.put('/api/point-shop/admin/item/:itemId', (req, res) => {
+app.put('/api/point-shop/admin/item/:itemId', async (req, res) => {
   try {
     const { itemId } = req.params;
     const updates = req.body;
     
-    const item = pointShopService.updatePointShopItem(itemId, updates);
+    const item = await pointShopService.updatePointShopItem(itemId, updates);
     if (!item) {
       return res.status(404).json({ error: 'Item not found' });
     }
@@ -3740,11 +3741,11 @@ app.put('/api/point-shop/admin/item/:itemId', (req, res) => {
 });
 
 // Admin: Delete item (deaktiviert)
-app.delete('/api/point-shop/admin/item/:itemId', (req, res) => {
+app.delete('/api/point-shop/admin/item/:itemId', async (req, res) => {
   try {
     const { itemId } = req.params;
     
-    const success = pointShopService.deletePointShopItem(itemId);
+    const success = await pointShopService.deletePointShopItem(itemId);
     if (!success) {
       return res.status(404).json({ error: 'Item not found' });
     }
@@ -3758,7 +3759,7 @@ app.delete('/api/point-shop/admin/item/:itemId', (req, res) => {
 });
 
 // Admin: Add Series Item (mehrere Inskriptionen → ein Item mit "1/N - N/N")
-app.post('/api/point-shop/admin/add-series', (req, res) => {
+app.post('/api/point-shop/admin/add-series', async (req, res) => {
   try {
     const { inscriptionIds, title, description, pointsCost, totalCount, inscriptionItemType } = req.body;
     
@@ -3770,7 +3771,7 @@ app.post('/api/point-shop/admin/add-series', (req, res) => {
       return res.status(400).json({ error: 'Missing required fields: title, pointsCost' });
     }
 
-    const item = pointShopService.addPointShopSeries(
+    const item = await pointShopService.addPointShopSeries(
       inscriptionIds,
       title,
       description || '',
@@ -3788,7 +3789,7 @@ app.post('/api/point-shop/admin/add-series', (req, res) => {
 });
 
 // Admin: Add Bulk Items (mehrere Inskriptionen → mehrere separate Items)
-app.post('/api/point-shop/admin/add-bulk', (req, res) => {
+app.post('/api/point-shop/admin/add-bulk', async (req, res) => {
   try {
     const { itemType, inscriptionIds, title, description, pointsCost } = req.body;
     
@@ -3804,7 +3805,7 @@ app.post('/api/point-shop/admin/add-bulk', (req, res) => {
       return res.status(400).json({ error: 'Missing required fields: title, pointsCost' });
     }
 
-    const items = pointShopService.addPointShopBulk(
+    const items = await pointShopService.addPointShopBulk(
       itemType,
       inscriptionIds,
       title,
@@ -3829,7 +3830,7 @@ app.post('/api/point-shop/mint-series', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields: walletAddress, itemId' });
     }
 
-    const item = pointShopService.getPointShopItem(itemId);
+    const item = await pointShopService.getPointShopItem(itemId);
     if (!item) {
       return res.status(404).json({ error: 'Item not found' });
     }
@@ -3850,7 +3851,7 @@ app.post('/api/point-shop/mint-series', async (req, res) => {
     }
 
     // Hole nächste Inskription (sequenziell)
-    const seriesResult = pointShopService.getNextSeriesInscription(itemId);
+    const seriesResult = await pointShopService.getNextSeriesInscription(itemId);
     if (!seriesResult) {
       return res.status(400).json({ error: 'Series is sold out or no more items available' });
     }
@@ -4774,16 +4775,41 @@ app.get('/api/admin/trades', requireAdmin, (req, res) => {
 
 // ========== SERVER START ==========
 
-app.listen(PORT, '0.0.0.0', () => {
+// Initialisiere Datenbank und starte Server
+async function startServer() {
+  // Initialisiere Datenbank
   console.log(`\n${'═'.repeat(80)}`);
-  console.log(`🚀 SERVER START - VERSION: Gallery-Debug-Logs-v1`);
-  console.log(`📅 DEPLOYED: 2025-01-12 13:00`);
-  console.log(`🔧 DEBUG: Erweiterte Logging für Gallery Delegates`);
-  console.log(`${'═'.repeat(80)}`);
-  console.log(`📍 Port: ${PORT}`);
-  console.log(`🌐 URL: http://localhost:${PORT}`);
-  console.log(`🔧 Mode: ${USE_MOCK ? '🧪 MOCK' : '✅ PRODUCTION'}`);
-  console.log(`🔑 UniSat API: ${UNISAT_API_KEY ? '✅ Konfiguriert' : '❌ Nicht konfiguriert'}`);
-  console.log(`👑 Admin Adressen: ${ADMIN_ADDRESSES.length}`);
-  console.log(`${'═'.repeat(80)}\n`);
+  console.log(`🔧 Initialisiere Datenbank...`);
+  const dbPool = initDatabase();
+  
+  if (dbPool) {
+    // Erstelle Tabellen
+    await createTables();
+    
+    // Führe Migration aus (JSON -> DB)
+    await pointShopService.migrateJSONToDB();
+    console.log(`✅ Datenbank bereit\n`);
+  } else {
+    console.log(`⚠️ Keine Datenbankverbindung - verwende JSON-Fallback\n`);
+  }
+
+  // Starte Server
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n${'═'.repeat(80)}`);
+    console.log(`🚀 SERVER START - VERSION: PostgreSQL-Persistent-v1`);
+    console.log(`📅 DEPLOYED: 2025-01-12 14:00`);
+    console.log(`💾 Datenbank: ${isDatabaseAvailable() ? '✅ PostgreSQL' : '⚠️ JSON-Fallback'}`);
+    console.log(`${'═'.repeat(80)}`);
+    console.log(`📍 Port: ${PORT}`);
+    console.log(`🌐 URL: http://localhost:${PORT}`);
+    console.log(`🔧 Mode: ${USE_MOCK ? '🧪 MOCK' : '✅ PRODUCTION'}`);
+    console.log(`🔑 UniSat API: ${UNISAT_API_KEY ? '✅ Konfiguriert' : '❌ Nicht konfiguriert'}`);
+    console.log(`👑 Admin Adressen: ${ADMIN_ADDRESSES.length}`);
+    console.log(`${'═'.repeat(80)}\n`);
+  });
+}
+
+startServer().catch(error => {
+  console.error('❌ Fehler beim Starten des Servers:', error);
+  process.exit(1);
 });
