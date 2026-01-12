@@ -4776,9 +4776,9 @@ app.get('/api/admin/trades', requireAdmin, (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n${'═'.repeat(80)}`);
-  console.log(`🚀 SERVER START - VERSION: Taproot-tapInternalKey-Fix-v1`);
-  console.log(`📅 DEPLOYED: 2025-01-12 12:00`);
-  console.log(`🔧 PSBT-FIX: Taproot tapInternalKey aus scriptPubKey extrahiert`);
+  console.log(`🚀 SERVER START - VERSION: Gallery-Debug-Logs-v1`);
+  console.log(`📅 DEPLOYED: 2025-01-12 13:00`);
+  console.log(`🔧 DEBUG: Erweiterte Logging für Gallery Delegates`);
   console.log(`${'═'.repeat(80)}`);
   console.log(`📍 Port: ${PORT}`);
   console.log(`🌐 URL: http://localhost:${PORT}`);

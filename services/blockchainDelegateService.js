@@ -518,6 +518,9 @@ export async function getDelegatesFromChain(walletAddress) {
     console.log(`[Blockchain] 🔍 Hole alle Inskriptionen der Adresse...`);
     let allInscriptions = await getInscriptionsByAddress(walletAddress);
     console.log(`[Blockchain] ✅ Gefunden ${allInscriptions.length} Inskriptionen für Adresse`);
+    if (allInscriptions.length > 0) {
+      console.log(`[Blockchain] 📋 Erste 3 Inskription-IDs:`, allInscriptions.slice(0, 3).map(ins => ins.inscriptionId || ins.id));
+    }
     
     // FALLBACK: Wenn UniSat API keine Inskriptionen findet, nutze Registry
     if (allInscriptions.length === 0) {
@@ -582,15 +585,19 @@ export async function getDelegatesFromChain(walletAddress) {
     
     // Schritt 2: Hole Original-Inskription-IDs für rekursive Referenz-Prüfung
     const originalInscriptionIds = await getAllOriginalCardInscriptionIds();
+    console.log(`[Blockchain] 📋 Geladen ${originalInscriptionIds.length} Original-Inskription-IDs für Referenz-Prüfung`);
     
     // Schritt 3: Prüfe jede Inskription auf Delegate-Metadaten
     const foundDelegates = [];
+    
+    console.log(`[Blockchain] 🔍 Prüfe ${allInscriptions.length} Inskriptionen auf Delegate-Metadaten...`);
     
     for (let i = 0; i < allInscriptions.length; i++) {
       const inscription = allInscriptions[i];
       const inscriptionId = inscription.inscriptionId || inscription.id;
       
       if (!inscriptionId) {
+        console.log(`[Blockchain] ⚠️ Inskription ${i} hat keine ID, überspringe`);
         continue;
       }
       
@@ -601,15 +608,23 @@ export async function getDelegatesFromChain(walletAddress) {
       }
       
       try {
+        console.log(`[Blockchain] 🔍 Prüfe Inskription ${i + 1}/${allInscriptions.length}: ${inscriptionId}`);
+        
         // Hole Content der Inskription
         const content = await getInscriptionContent(inscriptionId);
         
         if (!content) {
+          console.log(`[Blockchain] ⚠️ Kein Content für ${inscriptionId}, überspringe`);
           continue;
         }
         
+        console.log(`[Blockchain] 📄 Content-Länge für ${inscriptionId}: ${content.length} chars, Preview: ${content.substring(0, 100)}...`);
+        
         // Prüfe ob es ein Delegate ist (mit Original-IDs für rekursive Referenz-Prüfung)
-        if (!isDelegateInscription(content, originalInscriptionIds)) {
+        const isDelegate = isDelegateInscription(content, originalInscriptionIds);
+        console.log(`[Blockchain] ${isDelegate ? '✅' : '❌'} ${inscriptionId} ist ${isDelegate ? 'ein' : 'KEIN'} Delegate`);
+        
+        if (!isDelegate) {
           continue; // Kein Delegate, überspringe
         }
         
@@ -675,10 +690,11 @@ export async function getDelegatesFromChain(walletAddress) {
  */
 export async function getDelegatesHybrid(walletAddress) {
   try {
-    console.log(`[Blockchain] Hybrid mode: Fetching from chain for ${walletAddress}`);
+    console.log(`[Blockchain] 🔄 Hybrid mode: Fetching from chain for ${walletAddress}`);
     
     // Versuche zuerst von Chain
     const chainDelegates = await getDelegatesFromChain(walletAddress);
+    console.log(`[Blockchain] ✅ Chain fetch completed: ${chainDelegates.length} delegates found`);
     
     // Update Cache (optional - könnte hier die Registry aktualisieren)
     // const delegateRegistry = await import('./delegateRegistry.js');
@@ -686,18 +702,49 @@ export async function getDelegatesHybrid(walletAddress) {
     //   delegateRegistry.registerDelegate(...);
     // });
     
+    // Wenn Chain keine Delegates findet, prüfe auch Registry als zusätzliche Quelle
+    if (chainDelegates.length === 0) {
+      console.log(`[Blockchain] ⚠️ Chain fetch returned 0 delegates, checking registry as additional source...`);
+      try {
+        const delegateRegistry = await import('./delegateRegistry.js');
+        const cachedDelegates = delegateRegistry.getDelegatesByWallet(walletAddress);
+        console.log(`[Blockchain] 📋 Registry has ${cachedDelegates.length} delegates for this address`);
+        if (cachedDelegates.length > 0) {
+          console.log(`[Blockchain] 📋 Registry delegates:`, cachedDelegates.slice(0, 3).map(d => ({
+            id: d.delegateInscriptionId,
+            name: d.name,
+            originalId: d.originalInscriptionId
+          })));
+        }
+        // Kombiniere Chain + Registry (ohne Duplikate)
+        const allDelegates = [...chainDelegates];
+        const chainIds = new Set(chainDelegates.map(d => d.delegateInscriptionId));
+        cachedDelegates.forEach(d => {
+          if (!chainIds.has(d.delegateInscriptionId)) {
+            allDelegates.push(d);
+          }
+        });
+        console.log(`[Blockchain] ✅ Combined result: ${allDelegates.length} delegates (${chainDelegates.length} from chain, ${cachedDelegates.length} from registry)`);
+        return allDelegates;
+      } catch (registryError) {
+        console.warn(`[Blockchain] ⚠️ Registry check failed:`, registryError.message);
+      }
+    }
+    
     return chainDelegates;
   } catch (error) {
-    console.warn('[Blockchain] Chain fetch failed, using cache:', error.message);
+    console.error('[Blockchain] ❌ Chain fetch failed:', error.message);
+    console.error('[Blockchain] ❌ Error stack:', error.stack);
     
     // Fallback auf Registry
     try {
+      console.log(`[Blockchain] 🔄 Falling back to registry...`);
       const delegateRegistry = await import('./delegateRegistry.js');
       const cachedDelegates = delegateRegistry.getDelegatesByWallet(walletAddress);
-      console.log(`[Blockchain] Using ${cachedDelegates.length} cached delegates`);
+      console.log(`[Blockchain] ✅ Using ${cachedDelegates.length} cached delegates from registry`);
       return cachedDelegates;
     } catch (registryError) {
-      console.error('[Blockchain] Registry fallback also failed:', registryError);
+      console.error('[Blockchain] ❌ Registry fallback also failed:', registryError);
       throw error; // Werfe den ursprünglichen Chain-Fehler
     }
   }
