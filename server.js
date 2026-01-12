@@ -4707,10 +4707,10 @@ app.get('/api/trades/offers', (req, res) => {
   }
 });
 
-// Create Trade Offer
-app.post('/api/trades/offers', (req, res) => {
+// Create Trade Offer - Schritt 1: Erstelle PSBTs mit Platzhalter-Empfänger
+app.post('/api/trades/offers', async (req, res) => {
   try {
-    const { maker, offerCards, requestCards, expiresAt, signature } = req.body;
+    const { maker, offerCards, requestCards, expiresAt, signature, signedPsbts } = req.body;
     
     if (!maker || !offerCards || !requestCards || !expiresAt) {
       return res.status(400).json({ error: 'Missing required fields: maker, offerCards, requestCards, expiresAt' });
@@ -4725,10 +4725,58 @@ app.post('/api/trades/offers', (req, res) => {
     }
 
     console.log(`[Trades] Creating offer by ${maker}: ${offerCards.length} cards offered, ${requestCards.length} cards requested`);
+
+    // Wenn signierte PSBTs vorhanden sind, speichere das Offer mit den signierten PSBTs
+    if (signedPsbts && Array.isArray(signedPsbts) && signedPsbts.length > 0) {
+      // Schritt 2: Offer mit signierten PSBTs speichern
+      const offer = tradeOfferService.createTradeOffer(maker, offerCards, requestCards, expiresAt, signature || '');
+      
+      // Speichere signierte PSBTs im Offer (mit Platzhalter-Empfänger)
+      tradeOfferService.saveMakerSignedPsbts(offer.offerId, signedPsbts);
+      
+      console.log(`[Trades] ✅ Trade offer created with ${signedPsbts.length} signed PSBTs (with placeholder recipient): ${offer.offerId}`);
+      res.json({ ...offer, makerSignedPsbts: signedPsbts.length });
+      return;
+    }
+
+    // Schritt 1: Erstelle PSBTs für jede angebotene Karte mit Platzhalter-Empfänger (Maker's Adresse)
+    // Der Maker muss diese im Frontend signieren
+    const feeRate = 5; // Standard Fee Rate für Trades
+    const psbts = [];
+
+    for (const cardId of offerCards) {
+      try {
+        // Erstelle PSBT mit Maker's Adresse als Platzhalter-Empfänger
+        // Später beim Accept wird eine neue Transaktion mit richtigem Taker-Empfänger erstellt
+        const psbtData = await ordinalTransferService.preparePresignedTransfer(
+          cardId,
+          maker, // Platzhalter: Sende an Maker selbst (wird beim Accept durch Taker ersetzt)
+          feeRate
+        );
+        
+        psbts.push({
+          inscriptionId: cardId,
+          psbtBase64: psbtData.psbtBase64,
+          placeholderRecipient: maker, // Markiere als Platzhalter
+        });
+      } catch (error) {
+        console.error(`[Trades] Error creating PSBT for card ${cardId}:`, error);
+        return res.status(500).json({ 
+          error: `Failed to create PSBT for card ${cardId}: ${error.message}` 
+        });
+      }
+    }
+
+    console.log(`[Trades] ✅ Created ${psbts.length} PSBTs with placeholder recipient (${maker}) for offer creation`);
     
-    const offer = tradeOfferService.createTradeOffer(maker, offerCards, requestCards, expiresAt, signature || '');
-    console.log(`[Trades] ✅ Trade offer created: ${offer.offerId}`);
-    res.json(offer);
+    res.json({ 
+      requiresSigning: true,
+      psbts: psbts,
+      message: 'Please sign all PSBTs in your wallet. These PSBTs use a placeholder recipient and will be replaced with the actual recipient when the offer is accepted.',
+      offerCards,
+      requestCards,
+      expiresAt,
+    });
   } catch (error) {
     console.error('[Trades] ❌ Error:', error);
     res.status(500).json({ error: error.message || 'Internal server error' });
@@ -4814,19 +4862,32 @@ app.post('/api/trades/offers/:offerId/accept', async (req, res) => {
     console.log(`[Trades] Taker will transfer ${takerCardsToTransfer.length} cards to maker`);
     console.log(`[Trades] Maker will transfer ${offer.offerCards.length} cards to taker`);
 
+    // Prüfe ob Maker bereits signierte PSBTs hat (mit Platzhalter)
+    const makerSignedPsbts = tradeOfferService.getMakerSignedPsbts(offerId);
+    const hasMakerSignedPsbts = makerSignedPsbts && makerSignedPsbts.length > 0;
+    
+    if (hasMakerSignedPsbts) {
+      console.log(`[Trades] ✅ Maker has already signed ${makerSignedPsbts.length} PSBTs (with placeholder). Creating new PSBTs with correct recipient.`);
+    } else {
+      console.log(`[Trades] ⚠️ Maker has not signed PSBTs yet. Creating new PSBTs for maker to sign.`);
+    }
+
     // Erstelle PSBTs für beide Seiten des Trades
     const feeRate = 5; // Standard Fee Rate für Trades
-    const psbts = [];
+    const makerPsbts = [];
+    const takerPsbts = [];
 
-    // 1. PSBTs für Maker's Karten → Taker
+    // 1. PSBTs für Maker's Karten → Taker (mit richtigem Empfänger)
+    // Die bereits signierten PSBTs mit Platzhalter dienen als Verpflichtung,
+    // aber wir erstellen neue PSBTs mit richtigem Empfänger für den tatsächlichen Transfer
     for (const makerCardId of offer.offerCards) {
       try {
         const psbtData = await ordinalTransferService.preparePresignedTransfer(
           makerCardId,
-          taker, // Maker's Karten gehen an Taker
+          taker, // Maker's Karten gehen an Taker (richtiger Empfänger)
           feeRate
         );
-        psbts.push({
+        makerPsbts.push({
           inscriptionId: makerCardId,
           recipient: taker,
           psbtBase64: psbtData.psbtBase64,
@@ -4840,7 +4901,7 @@ app.post('/api/trades/offers/:offerId/accept', async (req, res) => {
       }
     }
 
-    // 2. PSBTs für Taker's Karten → Maker
+    // 2. PSBTs für Taker's Karten → Maker (Taker muss diese signieren)
     for (const takerCardId of takerCardsToTransfer) {
       try {
         const psbtData = await ordinalTransferService.preparePresignedTransfer(
@@ -4848,7 +4909,7 @@ app.post('/api/trades/offers/:offerId/accept', async (req, res) => {
           offer.maker, // Taker's Karten gehen an Maker
           feeRate
         );
-        psbts.push({
+        takerPsbts.push({
           inscriptionId: takerCardId,
           recipient: offer.maker,
           psbtBase64: psbtData.psbtBase64,
@@ -4862,17 +4923,21 @@ app.post('/api/trades/offers/:offerId/accept', async (req, res) => {
       }
     }
 
-    console.log(`[Trades] ✅ Created ${psbts.length} PSBTs for trade ${offerId}`);
+    console.log(`[Trades] ✅ Created ${makerPsbts.length} maker PSBTs and ${takerPsbts.length} taker PSBTs for trade ${offerId}`);
     
     // Markiere Offer als "pending" (wird erst auf "accepted" gesetzt nach erfolgreichem Broadcast)
     tradeOfferService.updateTradeOfferStatus(offerId, 'pending');
     
+    // Speichere Maker-PSBTs im Offer (für später, wenn Maker signiert)
+    tradeOfferService.saveMakerPsbts(offerId, makerPsbts);
+    
     res.json({ 
       success: true, 
       requiresSigning: true,
-      psbts: psbts,
+      makerPsbts: makerPsbts, // PSBTs die der Maker signieren muss
+      takerPsbts: takerPsbts, // PSBTs die der Taker signieren muss
       offerId: offerId,
-      message: 'PSBTs created. Please sign all PSBTs in your wallet and call /api/trades/offers/:offerId/broadcast',
+      message: 'PSBTs created. Maker and Taker must sign their respective PSBTs. Taker can sign now, Maker must sign separately.',
       offer: tradeOfferService.getTradeOffer(offerId)
     });
   } catch (error) {
@@ -4881,11 +4946,42 @@ app.post('/api/trades/offers/:offerId/accept', async (req, res) => {
   }
 });
 
+// Maker signiert seine PSBTs für ein Trade Offer
+app.post('/api/trades/offers/:offerId/sign-maker', async (req, res) => {
+  try {
+    const { offerId } = req.params;
+    const { signedPsbts } = req.body; // Array von { inscriptionId, signedPsbtHex }
+    
+    if (!signedPsbts || !Array.isArray(signedPsbts) || signedPsbts.length === 0) {
+      return res.status(400).json({ error: 'Missing required field: signedPsbts (array)' });
+    }
+
+    const offer = tradeOfferService.getTradeOffer(offerId);
+    if (!offer) {
+      return res.status(404).json({ error: 'Trade offer not found' });
+    }
+
+    // Speichere signierte Maker-PSBTs
+    tradeOfferService.saveMakerSignedPsbts(offerId, signedPsbts);
+    
+    console.log(`[Trades] ✅ Maker signed ${signedPsbts.length} PSBTs for offer ${offerId}`);
+    
+    res.json({ 
+      success: true,
+      message: 'Maker PSBTs signed and saved. Trade can be completed when taker signs.',
+      offer: tradeOfferService.getTradeOffer(offerId)
+    });
+  } catch (error) {
+    console.error('[Trades] ❌ Error signing maker PSBTs:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
 // Broadcast signierte PSBTs für Trade
 app.post('/api/trades/offers/:offerId/broadcast', async (req, res) => {
   try {
     const { offerId } = req.params;
-    const { signedPsbts } = req.body; // Array von { inscriptionId, signedPsbtHex }
+    const { signedPsbts } = req.body; // Array von { inscriptionId, signedPsbtHex } - Taker's PSBTs
     
     if (!signedPsbts || !Array.isArray(signedPsbts) || signedPsbts.length === 0) {
       return res.status(400).json({ error: 'Missing required field: signedPsbts (array)' });
@@ -4900,13 +4996,38 @@ app.post('/api/trades/offers/:offerId/broadcast', async (req, res) => {
       return res.status(400).json({ error: `Trade offer is not in pending state (status: ${offer.status})` });
     }
 
-    const { partial, makerPsbtsCount } = req.body;
+    // Hole signierte Maker-PSBTs (falls vorhanden)
+    const makerSignedPsbts = tradeOfferService.getMakerSignedPsbts(offerId);
     
-    console.log(`[Trades] Broadcasting ${signedPsbts.length} signed transactions for trade ${offerId}`);
+    // Kombiniere alle PSBTs (Maker + Taker)
+    const allSignedPsbts = [];
+    
+    if (makerSignedPsbts && makerSignedPsbts.length > 0) {
+      // Konvertiere Maker-PSBTs zu Broadcast-Format
+      for (const makerPsbt of makerSignedPsbts) {
+        allSignedPsbts.push({
+          inscriptionId: makerPsbt.inscriptionId,
+          signedPsbtHex: makerPsbt.signedPsbtHex,
+        });
+      }
+      console.log(`[Trades] Using ${makerSignedPsbts.length} signed maker PSBTs`);
+    } else {
+      console.warn(`[Trades] ⚠️ No signed maker PSBTs found for offer ${offerId}. Only taker PSBTs will be broadcasted.`);
+    }
+    
+    // Füge Taker's signierte PSBTs hinzu
+    for (const takerPsbt of signedPsbts) {
+      allSignedPsbts.push({
+        inscriptionId: takerPsbt.inscriptionId,
+        signedPsbtHex: takerPsbt.signedPsbtHex,
+      });
+    }
+    
+    console.log(`[Trades] Broadcasting ${allSignedPsbts.length} signed transactions for trade ${offerId} (${makerSignedPsbts?.length || 0} maker + ${signedPsbts.length} taker)`);
 
     // Broadcast alle signierten PSBTs
     const txids = [];
-    for (const signedPsbt of signedPsbts) {
+    for (const signedPsbt of allSignedPsbts) {
       if (!signedPsbt.inscriptionId || !signedPsbt.signedPsbtHex) {
         return res.status(400).json({ error: 'Each signedPsbt must have inscriptionId and signedPsbtHex' });
       }
@@ -4931,17 +5052,19 @@ app.post('/api/trades/offers/:offerId/broadcast', async (req, res) => {
       }
     }
 
-    // Wenn partiell (Maker muss noch signieren), markiere als "pending_maker"
-    // Sonst als "accepted"
-    if (partial && makerPsbtsCount > 0) {
-      tradeOfferService.updateTradeOfferStatus(offerId, 'pending_maker');
-      console.log(`[Trades] ⚠️ Trade ${offerId} partially completed. Maker must sign ${makerPsbtsCount} PSBTs.`);
+    // Prüfe ob alle PSBTs gebroadcastet wurden
+    const expectedCount = (makerSignedPsbts?.length || 0) + signedPsbts.length;
+    const actualCount = txids.length;
+    
+    if (actualCount < expectedCount) {
+      // Nicht alle PSBTs wurden erfolgreich gebroadcastet
+      tradeOfferService.updateTradeOfferStatus(offerId, 'pending');
+      console.warn(`[Trades] ⚠️ Trade ${offerId} partially completed. Only ${actualCount}/${expectedCount} transactions broadcasted.`);
       return res.json({ 
         success: true, 
-        message: `Trade partially completed. Maker must sign ${makerPsbtsCount} PSBTs to complete the trade.`,
+        message: `Trade partially completed. ${actualCount}/${expectedCount} transactions broadcasted.`,
         txids: txids,
         partial: true,
-        makerPsbtsCount: makerPsbtsCount,
         offer: tradeOfferService.getTradeOffer(offerId)
       });
     }
@@ -4949,7 +5072,7 @@ app.post('/api/trades/offers/:offerId/broadcast', async (req, res) => {
     // Vollständiger Trade abgeschlossen
     tradeOfferService.updateTradeOfferStatus(offerId, 'accepted');
     
-    console.log(`[Trades] ✅ Trade ${offerId} completed successfully`);
+    console.log(`[Trades] ✅ Trade ${offerId} completed successfully. All ${actualCount} transactions broadcasted.`);
     res.json({ 
       success: true, 
       message: 'Trade completed successfully',

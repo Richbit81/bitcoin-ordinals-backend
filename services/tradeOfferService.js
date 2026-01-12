@@ -139,5 +139,59 @@ export function deleteTradeOffer(offerId) {
   return false;
 }
 
+/**
+ * Speichere Maker-PSBTs im Offer (für später, wenn Maker signiert)
+ */
+export function saveMakerPsbts(offerId, makerPsbts) {
+  const offers = loadTradeOffers();
+  if (offers[offerId]) {
+    offers[offerId].makerPsbts = makerPsbts;
+    offers[offerId].makerPsbtsSavedAt = new Date().toISOString();
+    saveTradeOffers(offers);
+    console.log(`[TradeOffer] Saved ${makerPsbts.length} maker PSBTs for offer ${offerId}`);
+    return offers[offerId];
+  }
+  return null;
+}
+
+/**
+ * Hole Maker-PSBTs für ein Offer
+ */
+export function getMakerPsbts(offerId) {
+  const offers = loadTradeOffers();
+  const offer = offers[offerId];
+  if (offer && offer.makerPsbts) {
+    return offer.makerPsbts;
+  }
+  return null;
+}
+
+/**
+ * Speichere signierte Maker-PSBTs im Offer
+ */
+export function saveMakerSignedPsbts(offerId, signedPsbts) {
+  const offers = loadTradeOffers();
+  if (offers[offerId]) {
+    offers[offerId].makerSignedPsbts = signedPsbts;
+    offers[offerId].makerSignedAt = new Date().toISOString();
+    saveTradeOffers(offers);
+    console.log(`[TradeOffer] Saved ${signedPsbts.length} signed maker PSBTs for offer ${offerId}`);
+    return offers[offerId];
+  }
+  return null;
+}
+
+/**
+ * Hole signierte Maker-PSBTs für ein Offer
+ */
+export function getMakerSignedPsbts(offerId) {
+  const offers = loadTradeOffers();
+  const offer = offers[offerId];
+  if (offer && offer.makerSignedPsbts) {
+    return offer.makerSignedPsbts;
+  }
+  return null;
+}
+
 
 
