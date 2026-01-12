@@ -257,7 +257,21 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
     });
     
     console.log(`[OrdinalTransfer] Output: ${utxoValueBigInt.toString()} sats to ${recipientAddress}`);
-    console.log(`[OrdinalTransfer] ✅ UNSIGNED PSBT created: ${psbt.inputCount} input(s), ${psbt.outputCount} output(s)`);
+    
+    // Debug: Prüfe PSBT-Struktur
+    const outputCount = psbt.txOutputs ? psbt.txOutputs.length : (psbt.outputCount || 'unknown');
+    console.log(`[OrdinalTransfer] ✅ UNSIGNED PSBT created: ${psbt.inputCount} input(s), ${outputCount} output(s)`);
+    
+    // Debug: Validiere PSBT-Struktur
+    try {
+      const psbtBase64Test = psbt.toBase64();
+      console.log(`[OrdinalTransfer] PSBT Base64 length: ${psbtBase64Test.length} chars`);
+      console.log(`[OrdinalTransfer] PSBT Base64 preview: ${psbtBase64Test.substring(0, 50)}...`);
+    } catch (validationError) {
+      console.error(`[OrdinalTransfer] ⚠️ PSBT validation error:`, validationError);
+      throw new Error(`PSBT validation failed: ${validationError.message}`);
+    }
+    
     console.log(`[OrdinalTransfer] ℹ️  This PSBT will be signed by the wallet in the frontend - NO PRIVATE KEY NEEDED IN BACKEND!`);
     return psbt;
 
