@@ -3827,6 +3827,63 @@ app.post('/api/point-shop/admin/reactivate-all', requireAdmin, async (req, res) 
   }
 });
 
+// Admin: Suche und reaktiviere Items mit spezifischem Titel
+app.post('/api/point-shop/admin/reactivate-by-title', requireAdmin, async (req, res) => {
+  try {
+    const { title } = req.body;
+    
+    if (!title) {
+      return res.status(400).json({ error: 'title is required' });
+    }
+
+    const { getPool, isDatabaseAvailable } = await import('./services/db.js');
+    
+    if (isDatabaseAvailable()) {
+      const pool = getPool();
+      
+      // Suche nach Items mit diesem Titel
+      const searchResult = await pool.query(
+        'SELECT * FROM point_shop_items WHERE title = $1 ORDER BY created_at DESC',
+        [title]
+      );
+      
+      if (searchResult.rows.length === 0) {
+        return res.json({ 
+          success: false, 
+          message: `Keine Items mit Titel "${title}" gefunden`,
+          found: 0,
+          reactivated: 0
+        });
+      }
+      
+      // Reaktiviere alle gefundenen Items
+      const reactivateResult = await pool.query(
+        'UPDATE point_shop_items SET active = true, updated_at = $1 WHERE title = $2 AND active = false',
+        [new Date(), title]
+      );
+      
+      console.log(`[PointShop] ✅ Admin: ${reactivateResult.rowCount} Items mit Titel "${title}" reaktiviert`);
+      res.json({ 
+        success: true, 
+        found: searchResult.rows.length,
+        reactivated: reactivateResult.rowCount,
+        items: searchResult.rows.map(row => ({
+          id: row.id,
+          title: row.title,
+          active: row.active,
+          pointsCost: row.points_cost,
+          itemType: row.item_type
+        }))
+      });
+    } else {
+      res.status(500).json({ error: 'Database not available' });
+    }
+  } catch (error) {
+    console.error('[PointShop] ❌ Error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
 // Admin: Add Series Item (mehrere Inskriptionen → ein Item mit "1/N - N/N")
 app.post('/api/point-shop/admin/add-series', async (req, res) => {
   try {
