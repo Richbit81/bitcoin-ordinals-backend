@@ -4526,10 +4526,21 @@ app.post('/api/trades/offers', (req, res) => {
     const { maker, offerCards, requestCards, expiresAt, signature } = req.body;
     
     if (!maker || !offerCards || !requestCards || !expiresAt) {
-      return res.status(400).json({ error: 'Missing required fields' });
+      return res.status(400).json({ error: 'Missing required fields: maker, offerCards, requestCards, expiresAt' });
     }
 
-    const offer = tradeOfferService.createTradeOffer(maker, offerCards, requestCards, expiresAt, signature);
+    if (!Array.isArray(offerCards) || offerCards.length === 0) {
+      return res.status(400).json({ error: 'offerCards must be a non-empty array' });
+    }
+
+    if (!Array.isArray(requestCards) || requestCards.length === 0) {
+      return res.status(400).json({ error: 'requestCards must be a non-empty array' });
+    }
+
+    console.log(`[Trades] Creating offer by ${maker}: ${offerCards.length} cards offered, ${requestCards.length} cards requested`);
+    
+    const offer = tradeOfferService.createTradeOffer(maker, offerCards, requestCards, expiresAt, signature || '');
+    console.log(`[Trades] ✅ Trade offer created: ${offer.offerId}`);
     res.json(offer);
   } catch (error) {
     console.error('[Trades] ❌ Error:', error);
@@ -4550,6 +4561,87 @@ app.get('/api/trades/offers/:offerId', (req, res) => {
     res.json(offer);
   } catch (error) {
     console.error('[Trades] ❌ Error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+// Accept Trade Offer
+app.post('/api/trades/offers/:offerId/accept', async (req, res) => {
+  try {
+    const { offerId } = req.params;
+    const { taker, walletType } = req.body;
+    
+    if (!taker) {
+      return res.status(400).json({ error: 'Missing required field: taker (wallet address)' });
+    }
+
+    const offer = tradeOfferService.getTradeOffer(offerId);
+    
+    if (!offer) {
+      return res.status(404).json({ error: 'Trade offer not found' });
+    }
+
+    if (offer.status !== 'active') {
+      return res.status(400).json({ error: `Trade offer is not active (status: ${offer.status})` });
+    }
+
+    if (offer.maker.toLowerCase() === taker.toLowerCase()) {
+      return res.status(400).json({ error: 'Cannot accept your own trade offer' });
+    }
+
+    // Prüfe ob Offer abgelaufen ist
+    const now = Math.floor(Date.now() / 1000);
+    if (offer.expiresAt < now) {
+      tradeOfferService.updateTradeOfferStatus(offerId, 'expired');
+      return res.status(400).json({ error: 'Trade offer has expired' });
+    }
+
+    console.log(`[Trades] Accepting offer ${offerId} by ${taker}`);
+    console.log(`[Trades] Offer: ${offer.offerCards.length} cards, Request: ${offer.requestCards.length} cards`);
+
+    // TODO: Hier würde die eigentliche Transaktion durchgeführt werden
+    // Für jetzt markieren wir das Offer als accepted
+    tradeOfferService.updateTradeOfferStatus(offerId, 'accepted');
+    
+    console.log(`[Trades] ✅ Trade offer ${offerId} accepted by ${taker}`);
+    res.json({ 
+      success: true, 
+      message: 'Trade offer accepted. Transaction will be processed.',
+      offer: tradeOfferService.getTradeOffer(offerId)
+    });
+  } catch (error) {
+    console.error('[Trades] ❌ Error accepting offer:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+// Cancel/Delete Trade Offer
+app.delete('/api/trades/offers/:offerId', (req, res) => {
+  try {
+    const { offerId } = req.params;
+    const { maker } = req.body; // Optional: Prüfe ob der Maker das Offer löscht
+    
+    const offer = tradeOfferService.getTradeOffer(offerId);
+    
+    if (!offer) {
+      return res.status(404).json({ error: 'Trade offer not found' });
+    }
+
+    // Optional: Prüfe ob nur der Maker sein eigenes Offer löschen kann
+    if (maker && offer.maker.toLowerCase() !== maker.toLowerCase()) {
+      return res.status(403).json({ error: 'Only the maker can cancel this trade offer' });
+    }
+
+    const success = tradeOfferService.deleteTradeOffer(offerId);
+    
+    if (!success) {
+      return res.status(404).json({ error: 'Trade offer not found' });
+    }
+    
+    console.log(`[Trades] ✅ Trade offer ${offerId} cancelled/deleted`);
+    res.json({ success: true, message: 'Trade offer cancelled' });
+  } catch (error) {
+    console.error('[Trades] ❌ Error cancelling offer:', error);
     res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
