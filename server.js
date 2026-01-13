@@ -4529,14 +4529,27 @@ app.get('/api/collections/admin/wallet-inscriptions', async (req, res) => {
 // Admin: Create collection
 app.post('/api/collections/admin/create', (req, res) => {
   try {
-    const { name, description, thumbnail, price, items, adminAddress } = req.body;
+    // Prüfe Header, Body und Query-Parameter (wie requireAdmin)
+    const adminAddress = req.headers['x-admin-address'] || 
+                         req.headers['X-Admin-Address'] ||
+                         req.body.adminAddress ||
+                         req.query.adminAddress;
+    
+    console.log(`[Collections] Create request`);
+    console.log(`[Collections] Admin address:`, adminAddress);
+    
+    if (!adminAddress) {
+      return res.status(401).json({ error: 'Unauthorized: Admin address required' });
+    }
+    
+    if (!isAdmin(adminAddress)) {
+      return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+    
+    const { name, description, thumbnail, price, items } = req.body;
     
     if (!name || !price || !items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Missing required fields: name, price, items' });
-    }
-
-    if (!adminAddress || !isAdmin(adminAddress)) {
-      return res.status(403).json({ error: 'Admin access required' });
     }
 
     const collection = collectionService.createCollection({
@@ -4670,14 +4683,23 @@ app.get('/api/test-admin', (req, res) => {
 // Admin: Get all collections (including inactive)
 app.get('/api/collections/admin/all', (req, res) => {
   try {
-    const { adminAddress } = req.query;
+    // Prüfe Header, Body und Query-Parameter (wie requireAdmin)
+    const adminAddress = req.headers['x-admin-address'] || 
+                         req.headers['X-Admin-Address'] ||
+                         req.query.adminAddress ||
+                         req.body.adminAddress;
     
     console.log(`[Collections Admin All] Checking admin: ${adminAddress}`);
     console.log(`[Collections Admin All] Admin addresses:`, ADMIN_ADDRESSES);
     
-    if (!adminAddress || !isAdmin(adminAddress)) {
+    if (!adminAddress) {
+      console.log(`[Collections Admin All] ❌ No admin address provided`);
+      return res.status(401).json({ error: 'Unauthorized: Admin address required' });
+    }
+    
+    if (!isAdmin(adminAddress)) {
       console.log(`[Collections Admin All] ❌ Access denied for: ${adminAddress}`);
-      return res.status(403).json({ error: 'Admin access required' });
+      return res.status(403).json({ error: 'Forbidden: Admin access required' });
     }
 
     console.log(`[Collections Admin All] ✅ Access granted for: ${adminAddress}`);
