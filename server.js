@@ -6,7 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
-// Force redeploy - Environment Variable Update
+// Force redeploy - Admin Address Update v2
 // Services
 import * as delegateRegistry from './services/delegateRegistry.js';
 import * as pointsService from './services/pointsService.js';
