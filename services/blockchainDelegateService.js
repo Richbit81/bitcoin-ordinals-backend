@@ -220,7 +220,10 @@ export async function getAllInscriptionsByAddress(address) {
 
     while (hasMore && pageCount < maxPages) {
       pageCount++;
-      console.log(`[Blockchain] 📄 Loading page ${pageCount} (cursor: ${cursor}, size: ${size})`);
+      // Reduziertes Logging - nur jede 10. Seite oder erste Seite
+      if (pageCount % 10 === 0 || pageCount === 1) {
+        console.log(`[Blockchain] 📄 Loading page ${pageCount} (cursor: ${cursor}, size: ${size})`);
+      }
 
       const result = await getInscriptionsByAddress(address, cursor, size);
       
@@ -232,7 +235,7 @@ export async function getAllInscriptionsByAddress(address) {
       // Füge Inskriptionen hinzu
       allInscriptions.push(...result.inscriptions);
       // Reduziertes Logging - nur jede 10. Seite oder bei wichtigen Meilensteinen
-      if (pageCount % 10 === 0 || result.inscriptions.length === 0) {
+      if (pageCount % 10 === 0 || result.inscriptions.length === 0 || pageCount === 1) {
         console.log(`[Blockchain] ✅ Page ${pageCount}: Loaded ${result.inscriptions.length} inscriptions (total so far: ${allInscriptions.length}/${result.total || 'unknown'})`);
       }
 
