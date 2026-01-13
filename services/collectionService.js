@@ -59,6 +59,7 @@ export function createCollection(data) {
     price: parseFloat(data.price) || 0,
     items: data.items || [],
     category: data.category || 'default', // Unterstützung für Kategorien (z.B. 'smileabit')
+    mintType: data.mintType || 'individual', // 'individual' = einzeln auswählbar, 'random' = zufällig
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     active: true,
