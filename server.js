@@ -4565,11 +4565,24 @@ app.post('/api/collections/admin/create', (req, res) => {
 app.put('/api/collections/admin/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, thumbnail, price, items, adminAddress } = req.body;
+    // Prüfe Header, Body und Query-Parameter (wie requireAdmin)
+    const adminAddress = req.headers['x-admin-address'] || 
+                         req.headers['X-Admin-Address'] ||
+                         req.body.adminAddress ||
+                         req.query.adminAddress;
     
-    if (!adminAddress || !isAdmin(adminAddress)) {
-      return res.status(403).json({ error: 'Admin access required' });
+    console.log(`[Collections] Update request for collection ${id}`);
+    console.log(`[Collections] Admin address:`, adminAddress);
+    
+    if (!adminAddress) {
+      return res.status(401).json({ error: 'Unauthorized: Admin address required' });
     }
+    
+    if (!isAdmin(adminAddress)) {
+      return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+    
+    const { name, description, thumbnail, price, items } = req.body;
 
     const updates = {};
     if (name !== undefined) updates.name = name;
@@ -4604,12 +4617,29 @@ app.put('/api/collections/admin/:id', (req, res) => {
 app.delete('/api/collections/admin/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const { adminAddress } = req.query;
+    // Prüfe Header, Body und Query-Parameter (wie requireAdmin)
+    const adminAddress = req.headers['x-admin-address'] || 
+                         req.headers['X-Admin-Address'] ||
+                         req.query.adminAddress ||
+                         req.body.adminAddress;
     
-    if (!adminAddress || !isAdmin(adminAddress)) {
-      return res.status(403).json({ error: 'Admin access required' });
+    console.log(`[Collections] Delete request for collection ${id}`);
+    console.log(`[Collections] Admin address from headers:`, req.headers['x-admin-address'] || req.headers['X-Admin-Address']);
+    console.log(`[Collections] Admin address from query:`, req.query.adminAddress);
+    console.log(`[Collections] Admin address from body:`, req.body.adminAddress);
+    console.log(`[Collections] Final adminAddress:`, adminAddress);
+    
+    if (!adminAddress) {
+      console.log(`[Collections] ❌ No admin address provided`);
+      return res.status(401).json({ error: 'Unauthorized: Admin address required' });
+    }
+    
+    if (!isAdmin(adminAddress)) {
+      console.log(`[Collections] ❌ Access denied for: ${adminAddress}`);
+      return res.status(403).json({ error: 'Forbidden: Admin access required' });
     }
 
+    console.log(`[Collections] ✅ Admin access granted, deactivating collection: ${id}`);
     const success = collectionService.deleteCollection(id);
     
     if (!success) {
