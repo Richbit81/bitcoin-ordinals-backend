@@ -6,7 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
-// Force redeploy - Admin Address Update v2
+// Force redeploy - Admin Address Update v3 - Verbessertes Logging
 // Services
 import * as delegateRegistry from './services/delegateRegistry.js';
 import * as pointsService from './services/pointsService.js';
@@ -5368,6 +5368,10 @@ async function startServer() {
     console.log(`🔧 Mode: ${USE_MOCK ? '🧪 MOCK' : '✅ PRODUCTION'}`);
     console.log(`🔑 UniSat API: ${UNISAT_API_KEY ? '✅ Konfiguriert' : '❌ Nicht konfiguriert'}`);
     console.log(`👑 Admin Adressen: ${ADMIN_ADDRESSES.length}`);
+    console.log(`👑 Admin Adressen Liste:`);
+    ADMIN_ADDRESSES.forEach((addr, idx) => {
+      console.log(`   ${idx + 1}. ${addr}`);
+    });
     console.log(`${'═'.repeat(80)}\n`);
   });
 }
