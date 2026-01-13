@@ -58,6 +58,7 @@ export function createCollection(data) {
     thumbnail: data.thumbnail || '',
     price: parseFloat(data.price) || 0,
     items: data.items || [],
+    category: data.category || 'default', // Unterstützung für Kategorien (z.B. 'smileabit')
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     active: true,

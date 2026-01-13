@@ -4543,6 +4543,7 @@ app.post('/api/collections/admin/create', (req, res) => {
       description: description || '',
       thumbnail: thumbnail || '',
       price: parseFloat(price),
+      category: req.body.category || 'default', // Unterstützung für Kategorien
       items: items.map(item => ({
         inscriptionId: item.inscriptionId,
         name: item.name || `Item ${item.inscriptionId.slice(0, 10)}...`,
@@ -4574,6 +4575,7 @@ app.put('/api/collections/admin/:id', (req, res) => {
     if (description !== undefined) updates.description = description;
     if (thumbnail !== undefined) updates.thumbnail = thumbnail;
     if (price !== undefined) updates.price = parseFloat(price);
+    if (req.body.category !== undefined) updates.category = req.body.category;
     if (items !== undefined && Array.isArray(items)) {
       updates.items = items.map(item => ({
         inscriptionId: item.inscriptionId,
