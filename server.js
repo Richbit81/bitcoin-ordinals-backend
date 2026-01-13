@@ -5136,18 +5136,40 @@ function requireAdmin(req, res, next) {
                        req.query.adminAddress ||
                        req.query.address;
   
+  console.log(`[requireAdmin] 🔍 Checking admin access...`);
+  console.log(`[requireAdmin] Headers:`, {
+    'x-admin-address': req.headers['x-admin-address'],
+    'X-Admin-Address': req.headers['X-Admin-Address'],
+    'x-wallet-address': req.headers['x-wallet-address'],
+    'X-Wallet-Address': req.headers['X-Wallet-Address'],
+  });
+  console.log(`[requireAdmin] Body:`, { 
+    walletAddress: req.body.walletAddress, 
+    adminAddress: req.body.adminAddress 
+  });
+  console.log(`[requireAdmin] Query:`, { 
+    walletAddress: req.query.walletAddress, 
+    adminAddress: req.query.adminAddress,
+    address: req.query.address
+  });
+  console.log(`[requireAdmin] Extracted walletAddress:`, walletAddress);
+  
   if (!walletAddress) {
     console.log(`[requireAdmin] ❌ No wallet address provided. Headers:`, Object.keys(req.headers).filter(k => k.toLowerCase().includes('admin') || k.toLowerCase().includes('wallet')));
     console.log(`[requireAdmin] Query params:`, Object.keys(req.query));
     return res.status(401).json({ error: 'Unauthorized: Wallet address required' });
   }
   
-  if (!isAdmin(walletAddress)) {
-    console.log(`[requireAdmin] ❌ Access denied for: ${walletAddress}`);
+  const normalizedWalletAddress = walletAddress.toLowerCase().trim();
+  console.log(`[requireAdmin] Normalized walletAddress:`, normalizedWalletAddress);
+  console.log(`[requireAdmin] Calling isAdmin(${normalizedWalletAddress})...`);
+  
+  if (!isAdmin(normalizedWalletAddress)) {
+    console.log(`[requireAdmin] ❌ Access denied for: ${walletAddress} (normalized: ${normalizedWalletAddress})`);
     return res.status(403).json({ error: 'Forbidden: Admin access required' });
   }
   
-  console.log(`[requireAdmin] ✅ ADMIN_ACCESS_GRANTED from ${walletAddress} at ${new Date().toISOString()}`);
+  console.log(`[requireAdmin] ✅ ADMIN_ACCESS_GRANTED from ${walletAddress} (normalized: ${normalizedWalletAddress}) at ${new Date().toISOString()}`);
   next();
 }
 
