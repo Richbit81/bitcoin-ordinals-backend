@@ -53,6 +53,7 @@ const DEFAULT_ADMIN_ADDRESSES = [
   'bc1pk04c62dkcev08jvmhlecufxtp4xw4af0s9n3vtm8w3dsn9985dhsvpralc',
   '34VvkvWnRw2GVgEQaQZ6fykKbebBHiT4ft',
   'bc1p9j4g6r27yqhmp4c403vn33mz7uug439sthqngkkrylu7d7uq7d6qvz39jj',
+  'bc1p8hfflnq8dspvpeqdprqkncdfnk4hl5ne0ydnlslj2sk49fu5jxns2xxmk9',
 ];
 
 // Wenn ADMIN_ADDRESSES als Environment Variable gesetzt ist, verwende diese, sonst die Defaults
