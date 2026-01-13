@@ -71,14 +71,18 @@ console.log('[Server] ✅ Admin addresses count:', ADMIN_ADDRESSES.length);
 // Helper: Prüfe ob Admin
 function isAdmin(walletAddress) {
   if (!walletAddress) {
+    console.log(`[isAdmin] ❌ No wallet address provided`);
     return false;
   }
   // Case-insensitive Vergleich
-  const normalizedAddress = walletAddress.toLowerCase();
-  const isAdminResult = ADMIN_ADDRESSES.some(addr => addr.toLowerCase() === normalizedAddress);
+  const normalizedAddress = walletAddress.toLowerCase().trim();
+  const isAdminResult = ADMIN_ADDRESSES.some(addr => addr.toLowerCase().trim() === normalizedAddress);
   if (!isAdminResult) {
     console.log(`[isAdmin] ❌ Access denied: ${walletAddress} (normalized: ${normalizedAddress})`);
-    console.log(`[isAdmin] Available admin addresses:`, ADMIN_ADDRESSES);
+    console.log(`[isAdmin] Available admin addresses (${ADMIN_ADDRESSES.length}):`, ADMIN_ADDRESSES);
+    console.log(`[isAdmin] Normalized admin addresses:`, ADMIN_ADDRESSES.map(a => a.toLowerCase().trim()));
+  } else {
+    console.log(`[isAdmin] ✅ Access granted: ${walletAddress} (normalized: ${normalizedAddress})`);
   }
   return isAdminResult;
 }
