@@ -77,7 +77,10 @@ export async function getInscriptionsByAddress(address, cursor = 0, size = 100) 
     }
 
     const data = await response.json();
-    console.log(`[Blockchain] 📥 Full UniSat API Response:`, JSON.stringify(data, null, 2));
+    // Reduziertes Logging für Railway Rate Limits (nur bei Debug)
+    if (process.env.DEBUG_BLOCKCHAIN === 'true') {
+      console.log(`[Blockchain] 📥 Full UniSat API Response:`, JSON.stringify(data, null, 2));
+    }
 
     // Parse UniSat API Response-Struktur laut Dokumentation
     // Struktur: { code: 0, msg: "OK", data: { cursor, total, inscription: [...] } }
@@ -228,7 +231,10 @@ export async function getAllInscriptionsByAddress(address) {
 
       // Füge Inskriptionen hinzu
       allInscriptions.push(...result.inscriptions);
-      console.log(`[Blockchain] ✅ Page ${pageCount}: Loaded ${result.inscriptions.length} inscriptions (total so far: ${allInscriptions.length}/${result.total || 'unknown'})`);
+      // Reduziertes Logging - nur jede 10. Seite oder bei wichtigen Meilensteinen
+      if (pageCount % 10 === 0 || result.inscriptions.length === 0) {
+        console.log(`[Blockchain] ✅ Page ${pageCount}: Loaded ${result.inscriptions.length} inscriptions (total so far: ${allInscriptions.length}/${result.total || 'unknown'})`);
+      }
 
       // Prüfe ob es weitere Seiten gibt
       // Strategie 1: Wenn `total` vorhanden ist und größer als geladene Anzahl, gibt es mehr Seiten
@@ -241,19 +247,27 @@ export async function getAllInscriptionsByAddress(address) {
       // Prüfe 1: Total-basierte Pagination (am zuverlässigsten)
       if (result.total && typeof result.total === 'number' && allInscriptions.length < result.total) {
         shouldContinue = true;
-        console.log(`[Blockchain] ➡️ More pages available: Loaded ${allInscriptions.length}/${result.total} (${result.total - allInscriptions.length} remaining)`);
+        // Reduziertes Logging - nur bei wichtigen Meilensteinen
+        if (pageCount % 10 === 0 || pageCount === 1) {
+          console.log(`[Blockchain] ➡️ More pages available: Loaded ${allInscriptions.length}/${result.total} (${result.total - allInscriptions.length} remaining)`);
+        }
       }
       // Prüfe 2: Wir haben genau `size` Inskriptionen erhalten - versuche IMMER nächste Seite
       // WICHTIG: Wenn wir genau 100 erhalten, gibt es wahrscheinlich weitere Seiten!
       else if (result.inscriptions.length === size) {
         shouldContinue = true;
-        console.log(`[Blockchain] ➡️ Got exactly ${size} inscriptions on page ${pageCount}, assuming more pages available - will load next page`);
-        console.log(`[Blockchain] 🔍 Result structure: total=${result.total || 'N/A'}, cursor=${result.cursor || 'N/A'}, hasMore=${result.hasMore}`);
+        // Reduziertes Logging
+        if (pageCount % 10 === 0 || pageCount === 1) {
+          console.log(`[Blockchain] ➡️ Got exactly ${size} inscriptions on page ${pageCount}, assuming more pages available`);
+        }
       }
       // Prüfe 3: Cursor hat sich geändert - es gibt mehr Seiten
       else if (result.cursor && result.cursor !== cursor && result.cursor > cursor) {
         shouldContinue = true;
-        console.log(`[Blockchain] ➡️ Cursor changed from ${cursor} to ${result.cursor}, assuming more pages available`);
+        // Reduziertes Logging
+        if (pageCount % 10 === 0 || pageCount === 1) {
+          console.log(`[Blockchain] ➡️ Cursor changed from ${cursor} to ${result.cursor}, assuming more pages available`);
+        }
       }
       
       if (shouldContinue) {
