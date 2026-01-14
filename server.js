@@ -4755,7 +4755,8 @@ app.get('/api/collections/admin/all', async (req, res) => {
     }
 
     console.log(`[Collections Admin All] ✅ Access granted for: ${adminAddress}`);
-    const collections = collectionService.getAllCollectionsAdmin();
+    const category = req.query.category;
+    const collections = await collectionService.getAllCollectionsAdmin(category);
     res.json({ collections });
   } catch (error) {
     console.error('[Collections] ❌ Error:', error);
