@@ -4721,6 +4721,40 @@ app.delete('/api/collections/admin/:id', async (req, res) => {
   }
 });
 
+// Admin: Erase collection (permanently delete)
+app.delete('/api/collections/admin/:id/erase', async (req, res) => {
+  try {
+    const { id } = req.params;
+    // Prüfe Header, Body und Query-Parameter (wie requireAdmin)
+    const adminAddress = req.headers['x-admin-address'] || 
+                         req.headers['X-Admin-Address'] ||
+                         req.query.adminAddress ||
+                         req.body.adminAddress;
+    
+    console.log(`[Collections] ERASE request for collection ${id}`);
+    console.log(`[Collections] Admin address:`, adminAddress);
+    
+    if (!adminAddress) {
+      console.log(`[Collections] ❌ No admin address provided`);
+      return res.status(401).json({ error: 'Unauthorized: Admin address required' });
+    }
+    
+    if (!isAdmin(adminAddress)) {
+      console.log(`[Collections] ❌ Access denied for: ${adminAddress}`);
+      return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+
+    console.log(`[Collections] ⚠️ Admin access granted, PERMANENTLY DELETING collection: ${id}`);
+    await collectionService.deleteCollection(id);
+    
+    console.log(`[Collections] ✅ Admin PERMANENTLY DELETED collection: ${id}`);
+    res.json({ success: true, message: 'Collection permanently deleted' });
+  } catch (error) {
+    console.error('[Collections] ❌ Error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
 // Test endpoint to debug admin check
 app.get('/api/test-admin', (req, res) => {
   const { address } = req.query;

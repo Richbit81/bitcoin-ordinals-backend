@@ -360,6 +360,51 @@ export async function deactivateCollection(collectionId) {
 }
 
 /**
+ * Lösche Collection komplett (nicht nur deaktivieren)
+ */
+export async function deleteCollection(collectionId) {
+  let dbSuccess = false;
+  let jsonSuccess = false;
+
+  // BOMBENSICHER: Lösche aus PostgreSQL wenn verfügbar
+  if (isDatabaseAvailable()) {
+    try {
+      const pool = getPool();
+      await pool.query('DELETE FROM collections WHERE id = $1', [collectionId]);
+      dbSuccess = true;
+      console.log(`[CollectionService] ✅ Collection deleted from PostgreSQL: ${collectionId}`);
+    } catch (error) {
+      console.error('[CollectionService] ❌ Error deleting from PostgreSQL:', error);
+      dbSuccess = false;
+    }
+  }
+
+  // Lösche auch aus JSON (Fallback)
+  try {
+    const data = loadCollections();
+    data.collections = data.collections.filter(c => c.id !== collectionId);
+    saveCollections(data);
+    jsonSuccess = true;
+    console.log(`[CollectionService] ✅ Collection deleted from JSON: ${collectionId}`);
+  } catch (error) {
+    console.error('[CollectionService] ❌ Error deleting from JSON:', error);
+    jsonSuccess = false;
+  }
+
+  if (!dbSuccess && !jsonSuccess) {
+    throw new Error(`Failed to delete collection ${collectionId} from both PostgreSQL and JSON`);
+  }
+  if (!dbSuccess) {
+    console.warn(`[CollectionService] ⚠️ Collection only deleted from JSON (PostgreSQL failed): ${collectionId}`);
+  }
+  if (!jsonSuccess) {
+    console.warn(`[CollectionService] ⚠️ Collection only deleted from PostgreSQL (JSON failed): ${collectionId}`);
+  }
+
+  return { success: true };
+}
+
+/**
  * Hole alle Kollektionen (auch inaktive) - für Admin
  */
 export async function getAllCollectionsAdmin(category = null) {
