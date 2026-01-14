@@ -4801,9 +4801,12 @@ app.post('/api/collections/admin/:id/set-random', async (req, res) => {
 });
 
 // Mint original ordinal from collection
+// Unterstützt zwei Modi:
+// 1. Ohne signedPsbt: Erstellt PSBT und gibt es zurück (requiresSigning: true)
+// 2. Mit signedPsbt: Broadcastet die signierte Transaktion
 app.post('/api/collections/mint-original', async (req, res) => {
   try {
-    const { walletAddress, collectionId, itemId, feeRate, walletType } = req.body;
+    const { walletAddress, collectionId, itemId, feeRate, walletType, signedPsbt } = req.body;
     
     if (!walletAddress || !collectionId || !itemId || !feeRate) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -4819,24 +4822,47 @@ app.post('/api/collections/mint-original', async (req, res) => {
       return res.status(400).json({ error: 'Item not found or not an original ordinal' });
     }
 
-    console.log(`[Collections] 🔄 Starting transfer of ${item.inscriptionId} to ${walletAddress}`);
-    
-    // Transfer über PSBT (On-Demand)
-    const transferResult = await ordinalTransferService.transferOrdinal(
-      item.inscriptionId,
-      walletAddress,
-      parseInt(feeRate, 10)
-    );
-    
-    console.log(`[Collections] ✅ Original ordinal ${item.inscriptionId} transferred to ${walletAddress}`);
-    console.log(`[Collections] 📝 Transaction ID: ${transferResult.txid}`);
+    // Wenn signedPsbt vorhanden ist, broadcasten
+    if (signedPsbt) {
+      console.log(`[Collections] 🔄 Broadcasting signed PSBT for ${item.inscriptionId} to ${walletAddress}`);
+      
+      const transferResult = await ordinalTransferService.transferOrdinal(
+        item.inscriptionId,
+        walletAddress,
+        parseInt(feeRate, 10),
+        signedPsbt
+      );
+      
+      console.log(`[Collections] ✅ Original ordinal ${item.inscriptionId} transferred to ${walletAddress}`);
+      console.log(`[Collections] 📝 Transaction ID: ${transferResult.txid}`);
       
       res.json({
         success: true,
-      message: 'Transfer completed successfully',
-      txid: transferResult.txid,
-      inscriptionId: item.inscriptionId,
-    });
+        message: 'Transfer completed successfully',
+        txid: transferResult.txid,
+        inscriptionId: item.inscriptionId,
+      });
+    } else {
+      // Erstelle PSBT für Frontend-Signing
+      console.log(`[Collections] 🔄 Creating PSBT for ${item.inscriptionId} to ${walletAddress}`);
+      
+      const psbtData = await ordinalTransferService.preparePresignedTransfer(
+        item.inscriptionId,
+        walletAddress,
+        parseInt(feeRate, 10)
+      );
+      
+      console.log(`[Collections] ✅ PSBT created for ${item.inscriptionId} (ready for wallet signing)`);
+      
+      res.json({
+        success: true,
+        requiresSigning: true,
+        psbtBase64: psbtData.psbtBase64,
+        inscriptionId: item.inscriptionId,
+        feeRate: parseInt(feeRate, 10),
+        recipientAddress: walletAddress,
+      });
+    }
   } catch (error) {
     console.error('[Collections] ❌ Transfer error:', error);
     res.status(500).json({ error: error.message || 'Internal server error' });
