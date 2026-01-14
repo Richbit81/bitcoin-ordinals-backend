@@ -4916,6 +4916,142 @@ app.get('/api/collections/:collectionId/recent-mints', async (req, res) => {
   }
 });
 
+// Admin: Force re-migrate collections from JSON (wenn vorhanden)
+app.post('/api/collections/admin/force-migrate', async (req, res) => {
+  try {
+    const getValidAddress = (value) => {
+      if (!value) return null;
+      if (typeof value === 'string' && (value === 'undefined' || value === 'null' || value.trim() === '')) {
+        return null;
+      }
+      return value;
+    };
+    
+    const adminAddress = getValidAddress(req.query.adminAddress) ||
+                        getValidAddress(req.headers['x-admin-address']) ||
+                        getValidAddress(req.headers['X-Admin-Address']) ||
+                        getValidAddress(req.body?.adminAddress);
+    
+    if (!adminAddress || !isAdmin(adminAddress)) {
+      return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+    
+    console.log('[Collections] 🔄 Force migration requested by admin');
+    
+    if (!isDatabaseAvailable()) {
+      return res.status(400).json({ error: 'Database not available. Collections are stored in JSON file only.' });
+    }
+    
+    const pool = getPool();
+    
+    // Lösche Migration-Status, um erneute Migration zu ermöglichen
+    await pool.query('DELETE FROM migration_status WHERE migration_name = $1', ['collections_json_to_db']);
+    
+    // Führe Migration erneut aus
+    await collectionService.migrateCollectionsToDB();
+    
+    // Hole alle Collections
+    const collections = await collectionService.getAllCollectionsAdmin();
+    
+    res.json({ 
+      success: true, 
+      message: 'Collections migration completed',
+      collectionsCount: collections.length,
+      collections: collections.map(c => ({ id: c.id, name: c.name, category: c.category }))
+    });
+  } catch (error) {
+    console.error('[Collections] ❌ Error during force migration:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+// Admin: Get all collections from JSON (for backup/restore)
+app.get('/api/collections/admin/json-backup', async (req, res) => {
+  try {
+    const getValidAddress = (value) => {
+      if (!value) return null;
+      if (typeof value === 'string' && (value === 'undefined' || value === 'null' || value.trim() === '')) {
+        return null;
+      }
+      return value;
+    };
+    
+    const adminAddress = getValidAddress(req.query.adminAddress) ||
+                        getValidAddress(req.headers['x-admin-address']) ||
+                        getValidAddress(req.headers['X-Admin-Address']);
+    
+    if (!adminAddress || !isAdmin(adminAddress)) {
+      return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+    
+    // Lade Collections aus JSON (Fallback)
+    const collectionsData = collectionService.loadCollections();
+    res.json({ collections: collectionsData.collections || [] });
+  } catch (error) {
+    console.error('[Collections] ❌ Error loading JSON backup:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+// Admin: Restore collections from JSON backup
+app.post('/api/collections/admin/restore-from-json', async (req, res) => {
+  try {
+    const getValidAddress = (value) => {
+      if (!value) return null;
+      if (typeof value === 'string' && (value === 'undefined' || value === 'null' || value.trim() === '')) {
+        return null;
+      }
+      return value;
+    };
+    
+    const adminAddress = getValidAddress(req.query.adminAddress) ||
+                        getValidAddress(req.headers['x-admin-address']) ||
+                        getValidAddress(req.headers['X-Admin-Address']) ||
+                        getValidAddress(req.body?.adminAddress);
+    
+    if (!adminAddress || !isAdmin(adminAddress)) {
+      return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+    
+    const { collections } = req.body;
+    
+    if (!collections || !Array.isArray(collections)) {
+      return res.status(400).json({ error: 'Invalid collections data' });
+    }
+    
+    console.log(`[Collections] 🔄 Restoring ${collections.length} collections from backup`);
+    
+    let restoredCount = 0;
+    for (const collectionData of collections) {
+      try {
+        // Erstelle Collection neu (wird in DB und JSON gespeichert)
+        await collectionService.createCollection({
+          name: collectionData.name,
+          description: collectionData.description || '',
+          thumbnail: collectionData.thumbnail || '',
+          price: collectionData.price || 0,
+          items: collectionData.items || [],
+          category: collectionData.category || 'default',
+          mintType: collectionData.mintType || collectionData.mint_type || 'individual',
+        });
+        restoredCount++;
+      } catch (error) {
+        console.error(`[Collections] ❌ Error restoring collection ${collectionData.name}:`, error);
+      }
+    }
+    
+    res.json({ 
+      success: true, 
+      message: `Restored ${restoredCount} of ${collections.length} collections`,
+      restoredCount,
+      totalCount: collections.length
+    });
+  } catch (error) {
+    console.error('[Collections] ❌ Error during restore:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
 // ========== TRADE ENDPOINTS ==========
 
 // Get Active Trade Offers

@@ -36,6 +36,9 @@ function loadCollections() {
   return { collections: [] };
 }
 
+// Exportiere für Admin-Endpoints
+export { loadCollections };
+
 /**
  * Speichere Collections Daten (JSON Fallback)
  */
