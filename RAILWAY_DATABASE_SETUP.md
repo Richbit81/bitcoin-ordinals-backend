@@ -18,12 +18,14 @@ Railway hat ein **ephemerales Filesystem** - das bedeutet, dass alle Dateien im 
 
 ### Schritt 2: DATABASE_URL Environment Variable prüfen/setzen
 
-**Option A: Automatisch (Railway setzt sie normalerweise automatisch)**
+**Option A: Automatisch (Railway setzt sie normalerweise automatisch) - PRÜFE ZUERST!**
 
 1. Gehe zu deinem **Backend-Service** (nicht die PostgreSQL-Datenbank, sondern dein Node.js Service)
 2. Klicke auf den **"Variables"** Tab
 3. Prüfe, ob `DATABASE_URL` bereits vorhanden ist
-4. Falls JA → Fertig! Railway hat sie automatisch gesetzt
+   - Suche in der Liste nach `DATABASE_URL`
+   - Railway setzt diese Variable manchmal automatisch, wenn PostgreSQL im gleichen Projekt ist
+4. Falls JA → ✅ **FERTIG!** Railway hat sie automatisch gesetzt. Du musst nichts weiter tun!
 5. Falls NEIN → weiter zu Option B
 
 **Option B: Manuell setzen (wenn Railway es nicht automatisch gemacht hat)**
@@ -36,18 +38,46 @@ Railway hat ein **ephemerales Filesystem** - das bedeutet, dass alle Dateien im 
      - Die PostgreSQL-Datenbank (z.B. "Postgres" oder "PostgreSQL")
    - **Klicke auf die PostgreSQL-Datenbank** (nicht auf dein Backend-Service!)
 
-2. **Öffne den "Connect" Tab**
-   - Oben siehst du mehrere Tabs: "Deployments", "Metrics", "Connect", etc.
-   - **Klicke auf "Connect"**
+2. **Finde die Connection URL - MEHRERE MÖGLICHKEITEN:**
 
-3. **Kopiere die Connection URL**
-   - Im "Connect" Tab siehst du mehrere Verbindungsoptionen
+   **Methode A: Variables Tab (EINFACHSTE METHODE)**
+   - Klicke auf den **"Variables"** Tab der PostgreSQL-Datenbank
+   - Suche nach **`DATABASE_URL`** oder **`POSTGRES_URL`** oder **`PGDATABASE`**
+   - Die Variable sollte eine URL enthalten, die mit `postgresql://` beginnt
+   - **Klicke auf das Kopier-Symbol** (📋) oder markiere die gesamte URL und kopiere sie (Strg+C)
+   - ✅ **FERTIG!** Du kannst diese URL direkt verwenden
+
+   **Methode B: Connect Tab (falls vorhanden)**
+   - Klicke auf den **"Connect"** Tab (falls vorhanden)
    - Suche nach **"Postgres Connection URL"** oder **"Connection String"**
    - Die URL sieht ungefähr so aus:
      ```
      postgresql://postgres:DEIN_PASSWORT@containers-us-west-XXX.railway.app:XXXX/railway
      ```
    - **Klicke auf das Kopier-Symbol** (📋) oder markiere die gesamte URL und kopiere sie (Strg+C)
+
+   **Methode C: Settings/Info Tab**
+   - Klicke auf **"Settings"** oder **"Info"** Tab
+   - Suche nach Connection-Informationen oder Database URL
+   - Kopiere die URL
+
+   **Methode D: Railway setzt DATABASE_URL automatisch (PRÜFEN ZUERST!)**
+   - Railway setzt manchmal automatisch eine `DATABASE_URL` Variable in deinem **Backend-Service**
+   - Gehe zu deinem **Backend-Service** → **"Variables"** Tab
+   - Prüfe, ob `DATABASE_URL` bereits vorhanden ist
+   - Falls JA → Fertig! Du musst nichts tun
+   - Falls NEIN → verwende Methode A, B oder C
+
+3. **Die Connection URL sollte so aussehen:**
+   ```
+   postgresql://postgres:PASSWORD@HOST:PORT/railway
+   ```
+   - Beginnt mit `postgresql://`
+   - Enthält `postgres:` (Benutzername)
+   - Enthält ein Passwort
+   - Enthält eine Host-Adresse (z.B. `containers-us-west-XXX.railway.app`)
+   - Enthält eine Port-Nummer
+   - Endet mit `/railway` oder einem anderen Datenbanknamen
 
 **Teil 2: DATABASE_URL in deinem Backend-Service setzen**
 
