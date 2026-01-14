@@ -4839,6 +4839,83 @@ app.post('/api/collections/mint-original', async (req, res) => {
   }
 });
 
+// Get recent minted items for a collection (or fallback to collection wallet items)
+app.get('/api/collections/:collectionId/recent-mints', async (req, res) => {
+  try {
+    const { collectionId } = req.params;
+    const limit = parseInt(req.query.limit || '10', 10);
+    
+    const collection = await collectionService.getCollection(collectionId);
+    if (!collection) {
+      return res.status(404).json({ error: 'Collection not found' });
+    }
+    
+    // Versuche, gemintete Items zu finden (durch Suche nach Delegates mit Collection-Name)
+    // Für jetzt: Hole einfach die ersten Items vom ersten Admin-Wallet als Fallback
+    const adminAddress = DEFAULT_ADMIN_ADDRESSES[0];
+    
+    if (!adminAddress) {
+      return res.status(500).json({ error: 'No admin address available' });
+    }
+    
+    try {
+      // Hole Inskriptionen vom Admin-Wallet
+      const inscriptions = await blockchainDelegateService.getAllInscriptionsByAddress(adminAddress);
+      
+      // Filtere nach Collection-Items (prüfe ob inscriptionId in collection.items ist)
+      const collectionInscriptionIds = new Set(collection.items.map(item => item.inscriptionId));
+      const collectionItems = inscriptions
+        .filter(ins => collectionInscriptionIds.has(ins.inscriptionId))
+        .slice(0, limit);
+      
+      // Formatiere für Frontend
+      const formattedItems = collectionItems.map(ins => {
+        const item = collection.items.find(i => i.inscriptionId === ins.inscriptionId);
+        return {
+          inscriptionId: ins.inscriptionId,
+          name: item?.name || `Item ${ins.inscriptionId.slice(0, 10)}...`,
+          imageUrl: item?.imageUrl || `${UNISAT_API_URL}/v1/indexer/inscription/info/${ins.inscriptionId}`,
+          type: item?.type || 'delegate',
+          mintedAt: ins.timestamp || Date.now(),
+        };
+      });
+      
+      // Falls nicht genug Items gefunden, fülle mit Collection-Items auf
+      if (formattedItems.length < limit) {
+        const remaining = limit - formattedItems.length;
+        const usedIds = new Set(formattedItems.map(item => item.inscriptionId));
+        const additionalItems = collection.items
+          .filter(item => !usedIds.has(item.inscriptionId))
+          .slice(0, remaining)
+          .map(item => ({
+            inscriptionId: item.inscriptionId,
+            name: item.name,
+            imageUrl: item.imageUrl || `${UNISAT_API_URL}/v1/indexer/inscription/info/${item.inscriptionId}`,
+            type: item.type,
+            mintedAt: Date.now(), // Placeholder timestamp
+          }));
+        formattedItems.push(...additionalItems);
+      }
+      
+      res.json({ items: formattedItems.slice(0, limit) });
+    } catch (error) {
+      console.error('[Collections Recent Mints] ❌ Error fetching inscriptions:', error);
+      // Fallback: Hole einfach die ersten Collection-Items
+      const fallbackItems = collection.items.slice(0, limit).map(item => ({
+        inscriptionId: item.inscriptionId,
+        name: item.name,
+        imageUrl: item.imageUrl || `${UNISAT_API_URL}/v1/indexer/inscription/info/${item.inscriptionId}`,
+        type: item.type,
+        mintedAt: Date.now(),
+      }));
+      res.json({ items: fallbackItems });
+    }
+  } catch (error) {
+    console.error('[Collections Recent Mints] ❌ Error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
 // ========== TRADE ENDPOINTS ==========
 
 // Get Active Trade Offers
