@@ -4911,17 +4911,20 @@ app.post('/api/collections/mint-original', async (req, res) => {
           return; // Wichtig: Return hier
         } catch (signError) {
           console.error(`[Collections] ❌ Failed to sign PSBT with admin key:`, signError);
+          console.error(`[Collections] Error details:`, signError.message);
           throw new Error(`Failed to sign and transfer: ${signError.message}. Please ensure ADMIN_PRIVATE_KEY is correctly set in Railway.`);
         }
       } else {
         // KEIN ADMIN_PRIVATE_KEY gesetzt - kann nicht sofort transferieren!
         console.error(`[Collections] ❌ ADMIN_PRIVATE_KEY not set - cannot perform instant transfer`);
         console.error(`[Collections] ⚠️ For instant transfers, ADMIN_PRIVATE_KEY must be set in Railway environment variables`);
+        console.error(`[Collections] Current process.env.ADMIN_PRIVATE_KEY:`, process.env.ADMIN_PRIVATE_KEY ? 'SET (but may be empty)' : 'NOT SET');
         
         res.status(500).json({
           error: 'ADMIN_PRIVATE_KEY not configured',
           message: 'Instant transfer requires ADMIN_PRIVATE_KEY to be set in Railway. Please configure it to enable instant transfers.',
           requiresAdminSigning: false,
+          instructions: '1. Go to Railway → Backend Service → Variables\n2. Add ADMIN_PRIVATE_KEY with value: Kxtc8p82sqppSrrcRnFkjE8Po2uJsAmo7nrdHyXde4n6S4YQMuqV\n3. Redeploy the backend',
         });
         return;
       }
