@@ -5025,6 +5025,115 @@ app.post('/api/collections/mint-original', async (req, res) => {
   }
 });
 
+// ========== ADMIN TRANSFER QUEUE ENDPOINTS ==========
+
+// Get transfer queue (für Admin-Panel)
+app.get('/api/collections/admin/transfer-queue', requireAdmin, async (req, res) => {
+  try {
+    const adminAddress = getValidAddress(req.query.adminAddress) ||
+                        getValidAddress(req.headers['x-admin-address']) ||
+                        getValidAddress(req.headers['X-Admin-Address']) ||
+                        getValidAddress(req.body?.adminAddress);
+    
+    if (!adminAddress || !isAdmin(adminAddress)) {
+      return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+    
+    // Hole Transfer-Queue (aus Memory oder Datenbank)
+    const queue = global.transferQueue || [];
+    
+    // Filtere nach Status
+    const status = req.query.status || 'pending';
+    const filteredQueue = status === 'all' 
+      ? queue 
+      : queue.filter(item => item.status === status);
+    
+    res.json({
+      success: true,
+      queue: filteredQueue,
+      total: queue.length,
+      pending: queue.filter(item => item.status === 'pending').length,
+      completed: queue.filter(item => item.status === 'completed').length,
+      failed: queue.filter(item => item.status === 'failed').length,
+    });
+  } catch (error) {
+    console.error('[Collections] ❌ Error getting transfer queue:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+// Admin signiert PSBT aus Queue (vom Admin-Panel)
+app.post('/api/collections/admin/sign-transfer', requireAdmin, async (req, res) => {
+  try {
+    const adminAddress = getValidAddress(req.query.adminAddress) ||
+                        getValidAddress(req.headers['x-admin-address']) ||
+                        getValidAddress(req.headers['X-Admin-Address']) ||
+                        getValidAddress(req.body?.adminAddress);
+    
+    if (!adminAddress || !isAdmin(adminAddress)) {
+      return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+    
+    const { transferQueueId, signedPsbt } = req.body;
+    
+    if (!transferQueueId || !signedPsbt) {
+      return res.status(400).json({ error: 'Missing transferQueueId or signedPsbt' });
+    }
+    
+    // Finde Transfer-Queue-Entry
+    const queue = global.transferQueue || [];
+    const queueEntry = queue.find(item => item.id === transferQueueId);
+    
+    if (!queueEntry) {
+      return res.status(404).json({ error: 'Transfer queue entry not found' });
+    }
+    
+    if (queueEntry.status !== 'pending') {
+      return res.status(400).json({ error: `Transfer already ${queueEntry.status}` });
+    }
+    
+    console.log(`[Collections] 🔐 Admin signing transfer: ${transferQueueId}`);
+    console.log(`[Collections] Inscription: ${queueEntry.inscriptionId}`);
+    console.log(`[Collections] Recipient: ${queueEntry.recipientAddress}`);
+    
+    // Broadcast die signierte PSBT
+    try {
+      const transferResult = await ordinalTransferService.transferOrdinal(
+        queueEntry.inscriptionId,
+        queueEntry.recipientAddress,
+        queueEntry.feeRate,
+        signedPsbt
+      );
+      
+      // Update Queue-Entry
+      queueEntry.status = 'completed';
+      queueEntry.txid = transferResult.txid;
+      queueEntry.completedAt = new Date().toISOString();
+      
+      console.log(`[Collections] ✅ Transfer completed: ${transferResult.txid}`);
+      
+      res.json({
+        success: true,
+        message: 'Transfer completed successfully',
+        txid: transferResult.txid,
+        inscriptionId: queueEntry.inscriptionId,
+        transferQueueId: transferQueueId,
+      });
+    } catch (broadcastError) {
+      // Update Queue-Entry mit Fehler
+      queueEntry.status = 'failed';
+      queueEntry.error = broadcastError.message;
+      queueEntry.failedAt = new Date().toISOString();
+      
+      console.error(`[Collections] ❌ Transfer failed:`, broadcastError);
+      throw broadcastError;
+    }
+  } catch (error) {
+    console.error('[Collections] ❌ Error signing transfer:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
 // Get recent minted items for a collection (or fallback to collection wallet items)
 app.get('/api/collections/:collectionId/recent-mints', async (req, res) => {
   try {
