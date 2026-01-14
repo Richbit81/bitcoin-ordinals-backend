@@ -346,31 +346,64 @@ export async function preparePresignedTransfer(inscriptionId, recipientAddress, 
  */
 export function finalizeSignedPSBT(signedPsbtHex) {
   try {
+    console.log(`[OrdinalTransfer] Finalizing PSBT... Input length: ${signedPsbtHex.length}, first 50 chars: ${signedPsbtHex.substring(0, 50)}`);
+    
     let psbt;
     
     // Try to parse as base64 first (most common format from wallets)
     try {
+      console.log('[OrdinalTransfer] Attempting to parse as Base64...');
       psbt = bitcoin.Psbt.fromBase64(signedPsbtHex, { network: NETWORK });
+      console.log('[OrdinalTransfer] ✅ Successfully parsed as Base64 PSBT');
     } catch (base64Error) {
+      console.log(`[OrdinalTransfer] Base64 parsing failed: ${base64Error.message}, trying hex...`);
       // If base64 fails, try hex
       try {
         psbt = bitcoin.Psbt.fromHex(signedPsbtHex, { network: NETWORK });
+        console.log('[OrdinalTransfer] ✅ Successfully parsed as Hex PSBT');
       } catch (hexError) {
+        console.error(`[OrdinalTransfer] ❌ Both Base64 and Hex parsing failed:`);
+        console.error(`  Base64 error: ${base64Error.message}`);
+        console.error(`  Hex error: ${hexError.message}`);
         throw new Error(`Failed to parse PSBT as base64 or hex: ${base64Error.message} / ${hexError.message}`);
       }
     }
     
-    // Finalize all inputs (extract signatures from PSBT)
-    psbt.finalizeAllInputs();
+    console.log(`[OrdinalTransfer] PSBT has ${psbt.inputCount} input(s) and ${psbt.outputCount} output(s)`);
+    
+    // Check if PSBT is already finalized
+    let needsFinalization = false;
+    for (let i = 0; i < psbt.inputCount; i++) {
+      const input = psbt.data.inputs[i];
+      if (!input.finalScriptSig && !input.finalScriptWitness) {
+        needsFinalization = true;
+        break;
+      }
+    }
+    
+    if (needsFinalization) {
+      console.log('[OrdinalTransfer] PSBT needs finalization, finalizing all inputs...');
+      // Finalize all inputs (extract signatures from PSBT)
+      psbt.finalizeAllInputs();
+      console.log('[OrdinalTransfer] ✅ All inputs finalized');
+    } else {
+      console.log('[OrdinalTransfer] ⚠️ PSBT appears to be already finalized');
+    }
     
     // Extract transaction
+    console.log('[OrdinalTransfer] Extracting transaction from PSBT...');
     const tx = psbt.extractTransaction();
     const txHex = tx.toHex();
+    const txId = tx.getId();
     
-    console.log(`[OrdinalTransfer] ✅ PSBT finalized, extracted transaction: ${tx.getId()}`);
+    console.log(`[OrdinalTransfer] ✅ PSBT finalized, extracted transaction: ${txId}`);
+    console.log(`[OrdinalTransfer] Transaction hex length: ${txHex.length}`);
+    console.log(`[OrdinalTransfer] Transaction has ${tx.ins.length} input(s) and ${tx.outs.length} output(s)`);
+    
     return txHex;
   } catch (error) {
-    console.error('[OrdinalTransfer] Error finalizing signed PSBT:', error);
+    console.error('[OrdinalTransfer] ❌ Error finalizing signed PSBT:', error);
+    console.error('[OrdinalTransfer] Error stack:', error.stack);
     throw error;
   }
 }
@@ -383,8 +416,21 @@ export function finalizeSignedPSBT(signedPsbtHex) {
 export async function broadcastPresignedTx(signedTxHex) {
   try {
     console.log('[OrdinalTransfer] Broadcasting pre-signed transaction...');
+    console.log(`[OrdinalTransfer] Transaction hex length: ${signedTxHex.length}`);
+    console.log(`[OrdinalTransfer] Transaction hex preview: ${signedTxHex.substring(0, 100)}...`);
+    
+    // Validate transaction hex format
+    if (!/^[0-9a-fA-F]+$/.test(signedTxHex)) {
+      throw new Error(`Invalid transaction hex format. Expected hex string, got: ${typeof signedTxHex} (length: ${signedTxHex.length})`);
+    }
+    
+    if (signedTxHex.length < 200) {
+      throw new Error(`Transaction hex too short (${signedTxHex.length} chars). Expected at least 200 characters.`);
+    }
     
     const broadcastUrl = `${UNISAT_API_URL}/v1/indexer/broadcast`;
+    console.log(`[OrdinalTransfer] Broadcasting to: ${broadcastUrl}`);
+    
     const broadcastResponse = await fetch(broadcastUrl, {
       method: 'POST',
       headers: {
@@ -394,22 +440,38 @@ export async function broadcastPresignedTx(signedTxHex) {
       body: JSON.stringify({ rawtx: signedTxHex }),
     });
 
+    console.log(`[OrdinalTransfer] Broadcast response status: ${broadcastResponse.status} ${broadcastResponse.statusText}`);
+
     if (!broadcastResponse.ok) {
-      const errorData = await broadcastResponse.json().catch(() => ({}));
-      throw new Error(errorData.message || `Broadcast failed: ${broadcastResponse.statusText}`);
+      const errorText = await broadcastResponse.text().catch(() => 'Unable to read error response');
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { message: errorText };
+      }
+      
+      console.error(`[OrdinalTransfer] ❌ Broadcast failed: ${broadcastResponse.status} ${broadcastResponse.statusText}`);
+      console.error(`[OrdinalTransfer] Error response:`, errorData);
+      
+      throw new Error(errorData.message || errorData.msg || `Broadcast failed: ${broadcastResponse.statusText}`);
     }
 
     const broadcastData = await broadcastResponse.json();
+    console.log(`[OrdinalTransfer] Broadcast response data:`, JSON.stringify(broadcastData, null, 2));
+    
     const txid = broadcastData.result || broadcastData.data || broadcastData.txid;
     
     if (!txid) {
+      console.error(`[OrdinalTransfer] ❌ No transaction ID in response. Full response:`, JSON.stringify(broadcastData, null, 2));
       throw new Error('Broadcast successful but no transaction ID returned.');
     }
 
     console.log(`[OrdinalTransfer] ✅ Pre-signed transaction broadcasted: ${txid}`);
     return { txid, broadcastData };
   } catch (error) {
-    console.error('[OrdinalTransfer] Error broadcasting pre-signed transaction:', error);
+    console.error('[OrdinalTransfer] ❌ Error broadcasting pre-signed transaction:', error);
+    console.error('[OrdinalTransfer] Error stack:', error.stack);
     throw error;
   }
 }
