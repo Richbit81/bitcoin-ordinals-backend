@@ -309,7 +309,12 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
     }
     
     console.log(`[OrdinalTransfer] ℹ️  This PSBT will be signed by the wallet in the frontend - NO PRIVATE KEY NEEDED IN BACKEND!`);
-    return psbt;
+    
+    // Return both PSBT and ownerAddress for preparePresignedTransfer
+    return {
+      psbt: psbt,
+      ownerAddress: ownerAddress
+    };
 
   } catch (error) {
     console.error('[OrdinalTransfer] Error creating PSBT:', error);
@@ -329,21 +334,19 @@ export async function preparePresignedTransfer(inscriptionId, recipientAddress, 
   try {
     console.log(`[OrdinalTransfer] Preparing UNSIGNED PSBT for pre-signing: ${inscriptionId} to ${recipientAddress} at ${feeRate} sat/vB`);
     
-    // Get owner address before creating PSBT (needed for frontend)
-    let ownerAddress = null;
-    try {
-      const utxoData = await getOrdinalUTXO(inscriptionId);
-      ownerAddress = utxoData?.address || null;
-      if (ownerAddress) {
-        console.log(`[OrdinalTransfer] Owner address (input address): ${ownerAddress}`);
-      }
-    } catch (err) {
-      console.warn(`[OrdinalTransfer] ⚠️ Could not get owner address: ${err.message}`);
-    }
+    // createTransferPSBT returns both PSBT and ownerAddress
+    const result = await createTransferPSBT(inscriptionId, recipientAddress, feeRate);
+    const psbt = result.psbt || result;
+    const ownerAddress = result.ownerAddress || null;
     
-    const psbt = await createTransferPSBT(inscriptionId, recipientAddress, feeRate);
     const psbtBase64 = psbt.toBase64();
     console.log(`[OrdinalTransfer] ✅ Unsigned PSBT created for ${inscriptionId} (ready for wallet signing)`);
+    if (ownerAddress) {
+      console.log(`[OrdinalTransfer] Owner address (input address): ${ownerAddress}`);
+    } else {
+      console.warn(`[OrdinalTransfer] ⚠️ Owner address not found`);
+    }
+    
     return { 
       psbtBase64, 
       inscriptionId, 
