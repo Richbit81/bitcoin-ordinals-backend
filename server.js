@@ -4546,7 +4546,7 @@ app.get('/api/collections/admin/wallet-inscriptions', async (req, res) => {
 });
 
 // Admin: Create collection
-app.post('/api/collections/admin/create', (req, res) => {
+app.post('/api/collections/admin/create', async (req, res) => {
   try {
     // Prüfe Header, Body und Query-Parameter (wie requireAdmin)
     const getValidAddress = (value) => {
@@ -4587,7 +4587,7 @@ app.post('/api/collections/admin/create', (req, res) => {
       return res.status(400).json({ error: 'Missing required fields: name, price, items' });
     }
 
-    const collection = collectionService.createCollection({
+    const collection = await collectionService.createCollection({
       name,
       description: description || '',
       thumbnail: thumbnail || '',
@@ -4610,7 +4610,7 @@ app.post('/api/collections/admin/create', (req, res) => {
 });
 
 // Admin: Update collection
-app.put('/api/collections/admin/:id', (req, res) => {
+app.put('/api/collections/admin/:id', async (req, res) => {
   try {
     const { id } = req.params;
     // Prüfe Header, Body und Query-Parameter (wie requireAdmin)
@@ -4655,7 +4655,7 @@ app.put('/api/collections/admin/:id', (req, res) => {
       }));
     }
 
-    const collection = collectionService.updateCollection(id, updates);
+    const collection = await collectionService.updateCollection(id, updates);
     
     if (!collection) {
       return res.status(404).json({ error: 'Collection not found' });
@@ -4670,7 +4670,7 @@ app.put('/api/collections/admin/:id', (req, res) => {
 });
 
 // Admin: Delete/Deactivate collection
-app.delete('/api/collections/admin/:id', (req, res) => {
+app.delete('/api/collections/admin/:id', async (req, res) => {
   try {
     const { id } = req.params;
     // Prüfe Header, Body und Query-Parameter (wie requireAdmin)
@@ -4724,7 +4724,7 @@ app.get('/api/test-admin', (req, res) => {
 });
 
 // Admin: Get all collections (including inactive)
-app.get('/api/collections/admin/all', (req, res) => {
+app.get('/api/collections/admin/all', async (req, res) => {
   try {
     // Prüfe Header, Body und Query-Parameter (wie requireAdmin)
     const getValidAddress = (value) => {
@@ -5416,7 +5416,7 @@ app.get('/api/admin/stats', requireAdmin, async (req, res) => {
       };
 
     try {
-      const collections = collectionService.getAllCollectionsAdmin();
+      const collections = await collectionService.getAllCollectionsAdmin();
       stats.totalCollections = collections.length;
       stats.activeCollections = collections.filter(c => c.active).length;
       stats.totalInscriptions = collections.reduce((sum, col) => sum + (col.items?.length || 0), 0);

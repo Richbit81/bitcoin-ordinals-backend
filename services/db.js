@@ -104,6 +104,24 @@ export async function createTables() {
       );
     `);
 
+    // Collections Tabelle
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS collections (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(500) NOT NULL,
+        description TEXT,
+        thumbnail TEXT,
+        price DECIMAL(18, 8) NOT NULL,
+        category VARCHAR(100) DEFAULT 'default',
+        mint_type VARCHAR(20) DEFAULT 'individual',
+        items JSONB NOT NULL,
+        active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT check_mint_type CHECK (mint_type IN ('individual', 'random'))
+      );
+    `);
+
     // Migration Status Tabelle (verhindert mehrfache Migrationen)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS migration_status (
@@ -120,6 +138,9 @@ export async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_point_shop_items_active ON point_shop_items(active);
       CREATE INDEX IF NOT EXISTS idx_point_shop_items_item_type ON point_shop_items(item_type);
       CREATE INDEX IF NOT EXISTS idx_point_shop_items_created_at ON point_shop_items(created_at);
+      CREATE INDEX IF NOT EXISTS idx_collections_active ON collections(active);
+      CREATE INDEX IF NOT EXISTS idx_collections_category ON collections(category);
+      CREATE INDEX IF NOT EXISTS idx_collections_created_at ON collections(created_at);
     `);
 
     console.log('[DB] ✅ Tabellen erstellt/überprüft');
