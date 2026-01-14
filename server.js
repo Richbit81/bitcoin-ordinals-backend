@@ -4719,10 +4719,18 @@ app.get('/api/test-admin', (req, res) => {
 app.get('/api/collections/admin/all', (req, res) => {
   try {
     // Prüfe Header, Body und Query-Parameter (wie requireAdmin)
-    const adminAddress = req.headers['x-admin-address'] || 
-                         req.headers['X-Admin-Address'] ||
-                         req.query.adminAddress ||
-                         req.body.adminAddress;
+    const getValidAddress = (value) => {
+      if (!value) return null;
+      if (typeof value === 'string' && (value === 'undefined' || value === 'null' || value.trim() === '')) {
+        return null;
+      }
+      return value;
+    };
+    
+    const adminAddress = getValidAddress(req.query.adminAddress) ||
+                        getValidAddress(req.headers['x-admin-address']) ||
+                        getValidAddress(req.headers['X-Admin-Address']) ||
+                        getValidAddress(req.body?.adminAddress);
     
     console.log(`[Collections Admin All] Checking admin: ${adminAddress}`);
     console.log(`[Collections Admin All] Admin addresses:`, ADMIN_ADDRESSES);
