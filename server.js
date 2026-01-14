@@ -4761,6 +4761,41 @@ app.get('/api/collections/admin/all', async (req, res) => {
   }
 });
 
+// Admin: Set Collection mintType to random (für SMILE A BIT)
+app.post('/api/collections/admin/:id/set-random', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const getValidAddress = (value) => {
+      if (!value) return null;
+      if (typeof value === 'string' && (value === 'undefined' || value === 'null' || value.trim() === '')) {
+        return null;
+      }
+      return value;
+    };
+    
+    const adminAddress = getValidAddress(req.query.adminAddress) ||
+                        getValidAddress(req.headers['x-admin-address']) ||
+                        getValidAddress(req.headers['X-Admin-Address']) ||
+                        getValidAddress(req.body?.adminAddress);
+    
+    if (!adminAddress || !isAdmin(adminAddress)) {
+      return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+    
+    const collection = await collectionService.updateCollection(id, { mintType: 'random' });
+    
+    if (!collection) {
+      return res.status(404).json({ error: 'Collection not found' });
+    }
+    
+    console.log(`[Collections] ✅ Admin set collection ${id} to random mint`);
+    res.json({ success: true, collection });
+  } catch (error) {
+    console.error('[Collections] ❌ Error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
 // Mint original ordinal from collection
 app.post('/api/collections/mint-original', async (req, res) => {
   try {
