@@ -4563,17 +4563,25 @@ app.post('/api/collections/admin/create', (req, res) => {
                         getValidAddress(req.body?.adminAddress);
     
     console.log(`[Collections] Create request`);
-    console.log(`[Collections] Admin address:`, adminAddress);
+    console.log(`[Collections] Query adminAddress:`, req.query.adminAddress);
+    console.log(`[Collections] Header x-admin-address:`, req.headers['x-admin-address']);
+    console.log(`[Collections] Header X-Admin-Address:`, req.headers['X-Admin-Address']);
+    console.log(`[Collections] Body adminAddress:`, req.body?.adminAddress);
+    console.log(`[Collections] Extracted adminAddress:`, adminAddress);
     
     if (!adminAddress) {
+      console.log(`[Collections] ❌ No admin address provided`);
       return res.status(401).json({ error: 'Unauthorized: Admin address required' });
     }
     
     if (!isAdmin(adminAddress)) {
+      console.log(`[Collections] ❌ Access denied for: ${adminAddress}`);
       return res.status(403).json({ error: 'Forbidden: Admin access required' });
     }
     
-    const { name, description, thumbnail, price, items } = req.body;
+    console.log(`[Collections] ✅ Admin access granted: ${adminAddress}`);
+    
+    const { name, description, thumbnail, price, items, mintType } = req.body;
     
     if (!name || !price || !items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Missing required fields: name, price, items' });
