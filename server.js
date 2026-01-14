@@ -5074,8 +5074,9 @@ app.post('/api/collections/admin/restore-from-json', async (req, res) => {
     for (const collectionData of collections) {
       try {
         // Erstelle Collection neu (wird in DB und JSON gespeichert)
-        // WICHTIG: Verwende die originale ID falls vorhanden, sonst wird eine neue erstellt
-        const collectionToCreate = {
+        // WICHTIG: Verwende die originale ID falls vorhanden (für Restore)
+        await collectionService.createCollection({
+          id: collectionData.id, // Behalte originale ID für Restore
           name: collectionData.name,
           description: collectionData.description || '',
           thumbnail: collectionData.thumbnail || '',
@@ -5084,10 +5085,9 @@ app.post('/api/collections/admin/restore-from-json', async (req, res) => {
           category: collectionData.category || 'default',
           page: collectionData.page || null,
           mintType: collectionData.mintType || collectionData.mint_type || 'individual',
-        };
-        
-        // Erstelle Collection (createCollection verwendet ON CONFLICT DO UPDATE, daher wird ID beibehalten)
-        await collectionService.createCollection(collectionToCreate);
+          createdAt: collectionData.createdAt, // Behalte originale Timestamps
+          active: collectionData.active !== false,
+        });
         restoredCount++;
       } catch (error) {
         console.error(`[Collections] ❌ Error restoring collection ${collectionData.name}:`, error);
