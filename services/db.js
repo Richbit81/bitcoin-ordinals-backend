@@ -115,6 +115,7 @@ export async function createTables() {
         category VARCHAR(100) DEFAULT 'default',
         page VARCHAR(100) DEFAULT NULL,
         mint_type VARCHAR(20) DEFAULT 'individual',
+        show_banner BOOLEAN DEFAULT false,
         items JSONB NOT NULL,
         active BOOLEAN DEFAULT true,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

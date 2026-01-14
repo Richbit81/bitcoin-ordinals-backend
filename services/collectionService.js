@@ -68,6 +68,7 @@ export async function createCollection(data) {
     category: data.category || 'default',
     page: data.page || null,
     mintType: data.mintType || 'individual',
+    showBanner: data.showBanner !== undefined ? data.showBanner : false,
     createdAt: data.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     active: data.active !== false,
@@ -81,8 +82,8 @@ export async function createCollection(data) {
     try {
       const pool = getPool();
       await pool.query(`
-        INSERT INTO collections (id, name, description, thumbnail, price, category, page, mint_type, items, active, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        INSERT INTO collections (id, name, description, thumbnail, price, category, page, mint_type, show_banner, items, active, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         ON CONFLICT (id) DO UPDATE SET
           name = EXCLUDED.name,
           description = EXCLUDED.description,
@@ -91,6 +92,7 @@ export async function createCollection(data) {
           category = EXCLUDED.category,
           page = EXCLUDED.page,
           mint_type = EXCLUDED.mint_type,
+          show_banner = EXCLUDED.show_banner,
           items = EXCLUDED.items,
           active = EXCLUDED.active,
           updated_at = EXCLUDED.updated_at
@@ -103,6 +105,7 @@ export async function createCollection(data) {
         newCollection.category,
         newCollection.page,
         newCollection.mintType,
+        newCollection.showBanner,
         JSON.stringify(newCollection.items),
         newCollection.active,
         newCollection.createdAt,
@@ -184,6 +187,7 @@ export async function getAllCollections(category = null, page = null) {
         category: row.category || 'default',
         page: row.page || null,
         mintType: row.mint_type || 'individual',
+        showBanner: row.show_banner !== false,
         createdAt: row.created_at?.toISOString() || new Date().toISOString(),
         updatedAt: row.updated_at?.toISOString() || new Date().toISOString(),
         active: row.active !== false,
@@ -234,6 +238,7 @@ export async function getCollection(collectionId) {
           category: row.category || 'default',
           page: row.page || null,
           mintType: row.mint_type || 'individual',
+          showBanner: row.show_banner !== false,
           createdAt: row.created_at?.toISOString() || new Date().toISOString(),
           updatedAt: row.updated_at?.toISOString() || new Date().toISOString(),
           active: row.active !== false,
@@ -286,10 +291,11 @@ export async function updateCollection(collectionId, updates) {
           category = COALESCE($5, category),
           page = COALESCE($6, page),
           mint_type = COALESCE($7, mint_type),
-          items = COALESCE($8, items),
-          active = COALESCE($9, active),
-          updated_at = $10
-        WHERE id = $11
+          show_banner = COALESCE($8, show_banner),
+          items = COALESCE($9, items),
+          active = COALESCE($10, active),
+          updated_at = $11
+        WHERE id = $12
       `, [
         updates.name || null,
         updates.description !== undefined ? updates.description : null,
@@ -298,6 +304,7 @@ export async function updateCollection(collectionId, updates) {
         updates.category || null,
         updates.page !== undefined ? updates.page : null,
         updates.mintType || null,
+        updates.showBanner !== undefined ? updates.showBanner : null,
         updates.items ? JSON.stringify(updates.items) : null,
         updates.active !== undefined ? updates.active : null,
         updatedCollection.updatedAt,
@@ -379,6 +386,7 @@ export async function getAllCollectionsAdmin(category = null) {
         category: row.category || 'default',
         page: row.page || null,
         mintType: row.mint_type || 'individual',
+        showBanner: row.show_banner !== false,
         createdAt: row.created_at?.toISOString() || new Date().toISOString(),
         updatedAt: row.updated_at?.toISOString() || new Date().toISOString(),
         active: row.active !== false,
@@ -466,8 +474,8 @@ export async function migrateCollectionsToDB() {
     
     for (const collection of collections) {
       await pool.query(`
-        INSERT INTO collections (id, name, description, thumbnail, price, category, page, mint_type, items, active, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        INSERT INTO collections (id, name, description, thumbnail, price, category, page, mint_type, show_banner, items, active, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         ON CONFLICT (id) DO NOTHING
       `, [
         collection.id,
@@ -478,6 +486,7 @@ export async function migrateCollectionsToDB() {
         collection.category || 'default',
         collection.page || null,
         collection.mintType || 'individual',
+        collection.showBanner !== undefined ? collection.showBanner : false,
         JSON.stringify(collection.items || []),
         collection.active !== false,
         collection.createdAt || new Date().toISOString(),

@@ -4597,6 +4597,7 @@ app.post('/api/collections/admin/create', async (req, res) => {
       category: req.body.category || 'default', // Unterstützung für Kategorien
       page: req.body.page || null, // Seiten-Zuordnung (z.B. 'smile-a-bit', 'tech-games', etc.)
       mintType: req.body.mintType || 'individual',
+      showBanner: req.body.showBanner !== undefined ? req.body.showBanner : false,
       items: items.map(item => ({
         inscriptionId: item.inscriptionId,
         name: item.name || `Item ${item.inscriptionId.slice(0, 10)}...`,
@@ -4642,7 +4643,7 @@ app.put('/api/collections/admin/:id', async (req, res) => {
       return res.status(403).json({ error: 'Forbidden: Admin access required' });
     }
     
-    const { name, description, thumbnail, price, items, mintType } = req.body;
+    const { name, description, thumbnail, price, items, mintType, showBanner } = req.body;
 
     const updates = {};
     if (name !== undefined) updates.name = name;
@@ -4652,6 +4653,7 @@ app.put('/api/collections/admin/:id', async (req, res) => {
     if (req.body.category !== undefined) updates.category = req.body.category;
     if (req.body.page !== undefined) updates.page = req.body.page;
     if (mintType !== undefined) updates.mintType = mintType;
+    if (showBanner !== undefined) updates.showBanner = showBanner;
     if (items !== undefined && Array.isArray(items)) {
       updates.items = items.map(item => ({
         inscriptionId: item.inscriptionId,
