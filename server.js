@@ -4120,7 +4120,26 @@ app.get('/api/collections/:id', (req, res) => {
 // Admin: Get wallet inscriptions
 app.get('/api/collections/admin/wallet-inscriptions', async (req, res) => {
   try {
-    const { address } = req.query;
+    // Prüfe Header, Body und Query-Parameter (wie requireAdmin)
+    const getValidAddress = (value) => {
+      if (!value) return null;
+      if (typeof value === 'string' && (value === 'undefined' || value === 'null' || value.trim() === '')) {
+        return null;
+      }
+      return value;
+    };
+    
+    const address = getValidAddress(req.query.address) ||
+                   getValidAddress(req.headers['x-admin-address']) ||
+                   getValidAddress(req.headers['X-Admin-Address']) ||
+                   getValidAddress(req.body.address) ||
+                   getValidAddress(req.body.adminAddress);
+    
+    console.log(`[Collections] Wallet inscriptions request`);
+    console.log(`[Collections] Query address:`, req.query.address);
+    console.log(`[Collections] Header x-admin-address:`, req.headers['x-admin-address']);
+    console.log(`[Collections] Header X-Admin-Address:`, req.headers['X-Admin-Address']);
+    console.log(`[Collections] Extracted address:`, address);
     
     if (!address) {
       return res.status(400).json({ error: 'Missing address parameter' });
@@ -4530,10 +4549,18 @@ app.get('/api/collections/admin/wallet-inscriptions', async (req, res) => {
 app.post('/api/collections/admin/create', (req, res) => {
   try {
     // Prüfe Header, Body und Query-Parameter (wie requireAdmin)
-    const adminAddress = req.headers['x-admin-address'] || 
-                         req.headers['X-Admin-Address'] ||
-                         req.body.adminAddress ||
-                         req.query.adminAddress;
+    const getValidAddress = (value) => {
+      if (!value) return null;
+      if (typeof value === 'string' && (value === 'undefined' || value === 'null' || value.trim() === '')) {
+        return null;
+      }
+      return value;
+    };
+    
+    const adminAddress = getValidAddress(req.query.adminAddress) ||
+                        getValidAddress(req.headers['x-admin-address']) ||
+                        getValidAddress(req.headers['X-Admin-Address']) ||
+                        getValidAddress(req.body?.adminAddress);
     
     console.log(`[Collections] Create request`);
     console.log(`[Collections] Admin address:`, adminAddress);
@@ -4579,10 +4606,18 @@ app.put('/api/collections/admin/:id', (req, res) => {
   try {
     const { id } = req.params;
     // Prüfe Header, Body und Query-Parameter (wie requireAdmin)
-    const adminAddress = req.headers['x-admin-address'] || 
-                         req.headers['X-Admin-Address'] ||
-                         req.body.adminAddress ||
-                         req.query.adminAddress;
+    const getValidAddress = (value) => {
+      if (!value) return null;
+      if (typeof value === 'string' && (value === 'undefined' || value === 'null' || value.trim() === '')) {
+        return null;
+      }
+      return value;
+    };
+    
+    const adminAddress = getValidAddress(req.query.adminAddress) ||
+                        getValidAddress(req.headers['x-admin-address']) ||
+                        getValidAddress(req.headers['X-Admin-Address']) ||
+                        getValidAddress(req.body?.adminAddress);
     
     console.log(`[Collections] Update request for collection ${id}`);
     console.log(`[Collections] Admin address:`, adminAddress);
