@@ -4885,8 +4885,17 @@ app.post('/api/collections/mint-original', async (req, res) => {
     // Ohne Private Key kann der Admin die PSBT nicht automatisch signieren.
     // Für "sofort" nach Kauf gibt es keine Alternative - der Admin MUSS signieren.
     if (isAdminAddress) {
+      // Debug: Prüfe ob ADMIN_PRIVATE_KEY gesetzt ist
+      const hasAdminKey = !!(process.env.ADMIN_PRIVATE_KEY || process.env.ADMIN_WIF);
+      console.log(`[Collections] 🔍 ADMIN_PRIVATE_KEY check:`, {
+        ADMIN_PRIVATE_KEY: process.env.ADMIN_PRIVATE_KEY ? 'SET' : 'NOT SET',
+        ADMIN_WIF: process.env.ADMIN_WIF ? 'SET' : 'NOT SET',
+        hasAdminKey: hasAdminKey,
+        keyLength: process.env.ADMIN_PRIVATE_KEY?.length || 0,
+      });
+      
       // Automatische Signatur (wenn ADMIN_PRIVATE_KEY gesetzt) - SOFORT!
-      if (process.env.ADMIN_PRIVATE_KEY) {
+      if (hasAdminKey) {
         console.log(`[Collections] 🔐 Admin address detected - signing PSBT automatically in backend (INSTANT TRANSFER)`);
         console.log(`[Collections] Owner address: ${ownerAddress} (admin address)`);
         
