@@ -416,16 +416,20 @@ export function finalizeSignedPSBT(signedPsbtHex) {
 export async function broadcastPresignedTx(signedTxHex) {
   try {
     console.log('[OrdinalTransfer] Broadcasting pre-signed transaction...');
-    console.log(`[OrdinalTransfer] Transaction hex length: ${signedTxHex.length}`);
-    console.log(`[OrdinalTransfer] Transaction hex preview: ${signedTxHex.substring(0, 100)}...`);
+    console.log(`[OrdinalTransfer] Input length: ${signedTxHex.length}`);
+    console.log(`[OrdinalTransfer] Input preview: ${signedTxHex.substring(0, 100)}...`);
     
-    // Validate transaction hex format
-    if (!/^[0-9a-fA-F]+$/.test(signedTxHex)) {
-      throw new Error(`Invalid transaction hex format. Expected hex string, got: ${typeof signedTxHex} (length: ${signedTxHex.length})`);
+    // WICHTIG: signedTxHex kann Base64 PSBT oder Hex Transaction sein
+    // Die Validierung sollte nicht zu strikt sein, da wir Base64 PSBTs akzeptieren müssen
+    // Die Finalisierung wird später prüfen, ob es eine gültige PSBT ist
+    
+    if (typeof signedTxHex !== 'string' || signedTxHex.length === 0) {
+      throw new Error(`Invalid transaction format. Expected non-empty string, got: ${typeof signedTxHex}`);
     }
     
-    if (signedTxHex.length < 200) {
-      throw new Error(`Transaction hex too short (${signedTxHex.length} chars). Expected at least 200 characters.`);
+    // Wenn es sehr kurz ist, ist es wahrscheinlich ungültig
+    if (signedTxHex.length < 50) {
+      throw new Error(`Transaction data too short (${signedTxHex.length} chars). Expected at least 50 characters.`);
     }
     
     const broadcastUrl = `${UNISAT_API_URL}/v1/indexer/broadcast`;
