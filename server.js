@@ -4697,11 +4697,7 @@ app.delete('/api/collections/admin/:id', async (req, res) => {
     }
 
     console.log(`[Collections] ✅ Admin access granted, deactivating collection: ${id}`);
-    const success = collectionService.deleteCollection(id);
-    
-    if (!success) {
-      return res.status(404).json({ error: 'Collection not found' });
-    }
+    await collectionService.deactivateCollection(id);
     
     console.log(`[Collections] ✅ Admin deactivated collection: ${id}`);
     res.json({ success: true });
