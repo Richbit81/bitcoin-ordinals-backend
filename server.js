@@ -4938,11 +4938,20 @@ app.post('/api/collections/mint-original', async (req, res) => {
           createdAt: new Date().toISOString(),
         };
         
-        // TODO: Speichere in Datenbank
-        // await db.query('INSERT INTO transfer_queue ...', [transferQueueId, ...]);
+        // Speichere in Datenbank (wenn verfügbar) oder Memory
+        // TODO: Implementiere Datenbank-Speicherung für Transfer-Queue
+        // Für jetzt: Speichere in Memory (wird bei Neustart verloren, aber für Testing OK)
+        if (!global.transferQueue) {
+          global.transferQueue = [];
+        }
+        global.transferQueue.push(transferQueueEntry);
         
         console.log(`[Collections] 📝 Transfer queue ID: ${transferQueueId}`);
+        console.log(`[Collections] 📊 Queue size: ${global.transferQueue.length}`);
         console.log(`[Collections] ⚠️ Admin must sign this PSBT via admin panel`);
+        
+        // Prüfe ob Admin-Wallet verbunden ist und versuche automatische Signatur
+        // TODO: Implementiere automatische Signatur über verbundenes Admin-Wallet
         
         res.json({
           success: true,
