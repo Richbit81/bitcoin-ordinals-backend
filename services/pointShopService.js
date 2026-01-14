@@ -237,7 +237,11 @@ export async function addPointShopItem(inscriptionId, itemType, title, descripti
     newItem.originalInscriptionId = inscriptionId;
   }
 
-  // Versuche DB, Fallback zu JSON
+  // BOMBENSICHER: Dual-Write (PostgreSQL + JSON)
+  let dbSuccess = false;
+  let jsonSuccess = false;
+  
+  // Speichere IMMER in PostgreSQL wenn verfügbar
   if (isDatabaseAvailable()) {
     try {
       const pool = getPool();
@@ -247,23 +251,55 @@ export async function addPointShopItem(inscriptionId, itemType, title, descripti
           id, item_type, title, description, points_cost, active, created_at, updated_at,
           delegate_inscription_id, original_inscription_id
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        ON CONFLICT (id) DO UPDATE SET
+          item_type = EXCLUDED.item_type,
+          title = EXCLUDED.title,
+          description = EXCLUDED.description,
+          points_cost = EXCLUDED.points_cost,
+          active = EXCLUDED.active,
+          updated_at = EXCLUDED.updated_at,
+          delegate_inscription_id = EXCLUDED.delegate_inscription_id,
+          original_inscription_id = EXCLUDED.original_inscription_id
       `, [
         row.id, row.item_type, row.title, row.description, row.points_cost, row.active,
         row.created_at, row.updated_at,
         row.delegate_inscription_id || null, row.original_inscription_id || null
       ]);
-      console.log(`[PointShop] ✅ DB: Item hinzugefügt: ${newItem.id} - ${title}`);
-      return newItem;
+      dbSuccess = true;
+      console.log(`[PointShop] ✅ DB: Item gespeichert: ${newItem.id} - ${title}`);
     } catch (error) {
-      console.error('[PointShop] ⚠️ DB-Fehler, verwende JSON-Fallback:', error.message);
+      console.error('[PointShop] ❌ DB-Fehler:', error.message);
+      dbSuccess = false;
     }
   }
-
-  // JSON Fallback
-  const data = loadPointShopJSON();
-  data.items.push(newItem);
-  savePointShopJSON(data);
-  console.log(`[PointShop] ✅ JSON: Item hinzugefügt: ${newItem.id} - ${title}`);
+  
+  // BOMBENSICHER: Speichere IMMER auch in JSON (Dual-Write)
+  try {
+    const data = loadPointShopJSON();
+    // Entferne altes Item mit gleicher ID falls vorhanden
+    data.items = data.items.filter(item => item.id !== newItem.id);
+    data.items.push(newItem);
+    savePointShopJSON(data);
+    jsonSuccess = true;
+    console.log(`[PointShop] ✅ JSON: Item gespeichert: ${newItem.id} - ${title}`);
+  } catch (error) {
+    console.error('[PointShop] ❌ JSON-Fehler:', error.message);
+    jsonSuccess = false;
+  }
+  
+  // Wenn beide fehlschlagen, werfe Fehler
+  if (!dbSuccess && !jsonSuccess) {
+    throw new Error('Failed to save Point Shop item to both PostgreSQL and JSON');
+  }
+  
+  // Wenn nur einer fehlschlägt, logge Warnung aber returniere trotzdem
+  if (!dbSuccess) {
+    console.warn(`[PointShop] ⚠️ Item nur in JSON gespeichert (PostgreSQL fehlgeschlagen): ${newItem.id}`);
+  }
+  if (!jsonSuccess) {
+    console.warn(`[PointShop] ⚠️ Item nur in PostgreSQL gespeichert (JSON fehlgeschlagen): ${newItem.id}`);
+  }
+  
   return newItem;
 }
 
@@ -317,8 +353,14 @@ export async function getPointShopItem(itemId) {
 
 /**
  * Aktualisiere ein Point Shop Item
+ * BOMBENSICHER: Aktualisiert IMMER PostgreSQL UND JSON (Dual-Write)
  */
 export async function updatePointShopItem(itemId, updates) {
+  let dbSuccess = false;
+  let jsonSuccess = false;
+  let updatedItem = null;
+  
+  // BOMBENSICHER: Aktualisiere IMMER in PostgreSQL wenn verfügbar
   if (isDatabaseAvailable()) {
     try {
       const pool = getPool();
@@ -354,47 +396,83 @@ export async function updatePointShopItem(itemId, updates) {
         } else if (key === 'inscriptionItemType') {
           setParts.push(`inscription_item_type = $${paramIndex++}`);
           values.push(value);
-        } else {
-          setParts.push(`${key} = $${paramIndex++}`);
+        } else if (key === 'title') {
+          setParts.push(`title = $${paramIndex++}`);
+          values.push(value);
+        } else if (key === 'description') {
+          setParts.push(`description = $${paramIndex++}`);
+          values.push(value);
+        } else if (key === 'active') {
+          setParts.push(`active = $${paramIndex++}`);
           values.push(value);
         }
       }
 
-      setParts.push(`updated_at = $${paramIndex++}`);
-      values.push(new Date());
-      values.push(itemId);
+      if (setParts.length > 0) {
+        setParts.push(`updated_at = $${paramIndex++}`);
+        values.push(new Date());
+        values.push(itemId);
 
-      await pool.query(
-        `UPDATE point_shop_items SET ${setParts.join(', ')} WHERE id = $${paramIndex}`,
-        values
-      );
+        await pool.query(
+          `UPDATE point_shop_items SET ${setParts.join(', ')} WHERE id = $${paramIndex}`,
+          values
+        );
 
-      const updated = await getPointShopItem(itemId);
-      if (updated) {
-        console.log(`[PointShop] ✅ DB: Item aktualisiert: ${itemId}`);
-        return updated;
+        updatedItem = await getPointShopItem(itemId);
+        if (updatedItem) {
+          dbSuccess = true;
+          console.log(`[PointShop] ✅ DB: Item aktualisiert: ${itemId}`);
+        }
       }
     } catch (error) {
-      console.error('[PointShop] ⚠️ DB-Fehler, verwende JSON-Fallback:', error.message);
+      console.error('[PointShop] ❌ DB-Fehler:', error.message);
+      dbSuccess = false;
     }
   }
 
-  // JSON Fallback
-  const data = loadPointShopJSON();
-  const item = data.items.find(item => item.id === itemId);
-  if (item) {
-    Object.assign(item, updates);
-    savePointShopJSON(data);
-    console.log(`[PointShop] ✅ JSON: Item aktualisiert: ${itemId}`);
-    return item;
+  // BOMBENSICHER: Aktualisiere IMMER auch in JSON (Dual-Write)
+  try {
+    const data = loadPointShopJSON();
+    const item = data.items.find(item => item.id === itemId);
+    if (item) {
+      Object.assign(item, updates);
+      savePointShopJSON(data);
+      updatedItem = item;
+      jsonSuccess = true;
+      console.log(`[PointShop] ✅ JSON: Item aktualisiert: ${itemId}`);
+    } else {
+      console.warn(`[PointShop] ⚠️ Item nicht in JSON gefunden für Update: ${itemId}`);
+    }
+  } catch (error) {
+    console.error('[PointShop] ❌ JSON-Fehler:', error.message);
+    jsonSuccess = false;
   }
-  return null;
+  
+  // Wenn beide fehlschlagen, werfe Fehler
+  if (!dbSuccess && !jsonSuccess) {
+    throw new Error(`Failed to update Point Shop item ${itemId} in both PostgreSQL and JSON`);
+  }
+  
+  // Wenn nur einer fehlschlägt, logge Warnung
+  if (!dbSuccess) {
+    console.warn(`[PointShop] ⚠️ Item nur in JSON aktualisiert (PostgreSQL fehlgeschlagen): ${itemId}`);
+  }
+  if (!jsonSuccess) {
+    console.warn(`[PointShop] ⚠️ Item nur in PostgreSQL aktualisiert (JSON fehlgeschlagen): ${itemId}`);
+  }
+  
+  return updatedItem;
 }
 
 /**
  * Lösche ein Point Shop Item (setzt active auf false)
+ * BOMBENSICHER: Deaktiviert IMMER in PostgreSQL UND JSON (Dual-Write)
  */
 export async function deletePointShopItem(itemId) {
+  let dbSuccess = false;
+  let jsonSuccess = false;
+  
+  // BOMBENSICHER: Deaktiviere IMMER in PostgreSQL wenn verfügbar
   if (isDatabaseAvailable()) {
     try {
       const pool = getPool();
@@ -402,23 +480,45 @@ export async function deletePointShopItem(itemId) {
         'UPDATE point_shop_items SET active = false, updated_at = $1 WHERE id = $2',
         [new Date(), itemId]
       );
+      dbSuccess = true;
       console.log(`[PointShop] ✅ DB: Item deaktiviert: ${itemId}`);
-      return true;
     } catch (error) {
-      console.error('[PointShop] ⚠️ DB-Fehler, verwende JSON-Fallback:', error.message);
+      console.error('[PointShop] ❌ DB-Fehler:', error.message);
+      dbSuccess = false;
     }
   }
 
-  // JSON Fallback
-  const data = loadPointShopJSON();
-  const item = data.items.find(item => item.id === itemId);
-  if (item) {
-    item.active = false;
-    savePointShopJSON(data);
-    console.log(`[PointShop] ✅ JSON: Item deaktiviert: ${itemId}`);
-    return true;
+  // BOMBENSICHER: Deaktiviere IMMER auch in JSON (Dual-Write)
+  try {
+    const data = loadPointShopJSON();
+    const item = data.items.find(item => item.id === itemId);
+    if (item) {
+      item.active = false;
+      savePointShopJSON(data);
+      jsonSuccess = true;
+      console.log(`[PointShop] ✅ JSON: Item deaktiviert: ${itemId}`);
+    } else {
+      console.warn(`[PointShop] ⚠️ Item nicht in JSON gefunden für Deaktivierung: ${itemId}`);
+    }
+  } catch (error) {
+    console.error('[PointShop] ❌ JSON-Fehler:', error.message);
+    jsonSuccess = false;
   }
-  return false;
+  
+  // Wenn beide fehlschlagen, werfe Fehler
+  if (!dbSuccess && !jsonSuccess) {
+    throw new Error(`Failed to delete Point Shop item ${itemId} in both PostgreSQL and JSON`);
+  }
+  
+  // Wenn nur einer fehlschlägt, logge Warnung aber returniere trotzdem true
+  if (!dbSuccess) {
+    console.warn(`[PointShop] ⚠️ Item nur in JSON deaktiviert (PostgreSQL fehlgeschlagen): ${itemId}`);
+  }
+  if (!jsonSuccess) {
+    console.warn(`[PointShop] ⚠️ Item nur in PostgreSQL deaktiviert (JSON fehlgeschlagen): ${itemId}`);
+  }
+  
+  return true;
 }
 
 /**
@@ -445,6 +545,11 @@ export async function addPointShopSeries(inscriptionIds, title, description, poi
     active: true,
   };
 
+  // BOMBENSICHER: Dual-Write (PostgreSQL + JSON)
+  let dbSuccess = false;
+  let jsonSuccess = false;
+  
+  // Speichere IMMER in PostgreSQL wenn verfügbar
   if (isDatabaseAvailable()) {
     try {
       const pool = getPool();
@@ -454,23 +559,58 @@ export async function addPointShopSeries(inscriptionIds, title, description, poi
           id, item_type, title, description, points_cost, active, created_at, updated_at,
           inscription_ids, current_index, total_count, series_title, inscription_item_type
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ON CONFLICT (id) DO UPDATE SET
+          item_type = EXCLUDED.item_type,
+          title = EXCLUDED.title,
+          description = EXCLUDED.description,
+          points_cost = EXCLUDED.points_cost,
+          active = EXCLUDED.active,
+          updated_at = EXCLUDED.updated_at,
+          inscription_ids = EXCLUDED.inscription_ids,
+          current_index = EXCLUDED.current_index,
+          total_count = EXCLUDED.total_count,
+          series_title = EXCLUDED.series_title,
+          inscription_item_type = EXCLUDED.inscription_item_type
       `, [
         row.id, row.item_type, row.title, row.description, row.points_cost, row.active,
         row.created_at, row.updated_at,
         row.inscription_ids, row.current_index, row.total_count, row.series_title, row.inscription_item_type
       ]);
-      console.log(`[PointShop] ✅ DB: Serie hinzugefügt: ${item.id} - ${title}`);
-      return item;
+      dbSuccess = true;
+      console.log(`[PointShop] ✅ DB: Serie gespeichert: ${item.id} - ${title}`);
     } catch (error) {
-      console.error('[PointShop] ⚠️ DB-Fehler, verwende JSON-Fallback:', error.message);
+      console.error('[PointShop] ❌ DB-Fehler:', error.message);
+      dbSuccess = false;
     }
   }
 
-  // JSON Fallback
-  const data = loadPointShopJSON();
-  data.items.push(item);
-  savePointShopJSON(data);
-  console.log(`[PointShop] ✅ JSON: Serie hinzugefügt: ${item.id} - ${title}`);
+  // BOMBENSICHER: Speichere IMMER auch in JSON (Dual-Write)
+  try {
+    const data = loadPointShopJSON();
+    // Entferne alte Serie mit gleicher ID falls vorhanden
+    data.items = data.items.filter(i => i.id !== item.id);
+    data.items.push(item);
+    savePointShopJSON(data);
+    jsonSuccess = true;
+    console.log(`[PointShop] ✅ JSON: Serie gespeichert: ${item.id} - ${title}`);
+  } catch (error) {
+    console.error('[PointShop] ❌ JSON-Fehler:', error.message);
+    jsonSuccess = false;
+  }
+  
+  // Wenn beide fehlschlagen, werfe Fehler
+  if (!dbSuccess && !jsonSuccess) {
+    throw new Error('Failed to save Point Shop series to both PostgreSQL and JSON');
+  }
+  
+  // Wenn nur einer fehlschlägt, logge Warnung aber returniere trotzdem
+  if (!dbSuccess) {
+    console.warn(`[PointShop] ⚠️ Serie nur in JSON gespeichert (PostgreSQL fehlgeschlagen): ${item.id}`);
+  }
+  if (!jsonSuccess) {
+    console.warn(`[PointShop] ⚠️ Serie nur in PostgreSQL gespeichert (JSON fehlgeschlagen): ${item.id}`);
+  }
+  
   return item;
 }
 
@@ -509,6 +649,11 @@ export async function addPointShopBulk(itemType, inscriptionIds, baseTitle, desc
     items.push(item);
   });
 
+  // BOMBENSICHER: Dual-Write (PostgreSQL + JSON)
+  let dbSuccess = false;
+  let jsonSuccess = false;
+  
+  // Speichere IMMER in PostgreSQL wenn verfügbar
   if (isDatabaseAvailable()) {
     try {
       const pool = getPool();
@@ -522,6 +667,15 @@ export async function addPointShopBulk(itemType, inscriptionIds, baseTitle, desc
               id, item_type, title, description, points_cost, active, created_at, updated_at,
               delegate_inscription_id, original_inscription_id
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (id) DO UPDATE SET
+              item_type = EXCLUDED.item_type,
+              title = EXCLUDED.title,
+              description = EXCLUDED.description,
+              points_cost = EXCLUDED.points_cost,
+              active = EXCLUDED.active,
+              updated_at = EXCLUDED.updated_at,
+              delegate_inscription_id = EXCLUDED.delegate_inscription_id,
+              original_inscription_id = EXCLUDED.original_inscription_id
           `, [
             row.id, row.item_type, row.title, row.description, row.points_cost, row.active,
             row.created_at, row.updated_at,
@@ -529,22 +683,46 @@ export async function addPointShopBulk(itemType, inscriptionIds, baseTitle, desc
           ]);
         }
         await pool.query('COMMIT');
-        console.log(`[PointShop] ✅ DB: ${items.length} Bulk-Items hinzugefügt: "${baseTitle}"`);
-        return items;
+        dbSuccess = true;
+        console.log(`[PointShop] ✅ DB: ${items.length} Bulk-Items gespeichert: "${baseTitle}"`);
       } catch (error) {
         await pool.query('ROLLBACK');
         throw error;
       }
     } catch (error) {
-      console.error('[PointShop] ⚠️ DB-Fehler, verwende JSON-Fallback:', error.message);
+      console.error('[PointShop] ❌ DB-Fehler:', error.message);
+      dbSuccess = false;
     }
   }
 
-  // JSON Fallback
-  const data = loadPointShopJSON();
-  data.items.push(...items);
-  savePointShopJSON(data);
-  console.log(`[PointShop] ✅ JSON: ${items.length} Bulk-Items hinzugefügt: "${baseTitle}"`);
+  // BOMBENSICHER: Speichere IMMER auch in JSON (Dual-Write)
+  try {
+    const data = loadPointShopJSON();
+    // Entferne alte Items mit gleichen IDs falls vorhanden
+    const itemIds = new Set(items.map(i => i.id));
+    data.items = data.items.filter(i => !itemIds.has(i.id));
+    data.items.push(...items);
+    savePointShopJSON(data);
+    jsonSuccess = true;
+    console.log(`[PointShop] ✅ JSON: ${items.length} Bulk-Items gespeichert: "${baseTitle}"`);
+  } catch (error) {
+    console.error('[PointShop] ❌ JSON-Fehler:', error.message);
+    jsonSuccess = false;
+  }
+  
+  // Wenn beide fehlschlagen, werfe Fehler
+  if (!dbSuccess && !jsonSuccess) {
+    throw new Error('Failed to save Point Shop bulk items to both PostgreSQL and JSON');
+  }
+  
+  // Wenn nur einer fehlschlägt, logge Warnung aber returniere trotzdem
+  if (!dbSuccess) {
+    console.warn(`[PointShop] ⚠️ Bulk-Items nur in JSON gespeichert (PostgreSQL fehlgeschlagen): "${baseTitle}"`);
+  }
+  if (!jsonSuccess) {
+    console.warn(`[PointShop] ⚠️ Bulk-Items nur in PostgreSQL gespeichert (JSON fehlgeschlagen): "${baseTitle}"`);
+  }
+  
   return items;
 }
 
