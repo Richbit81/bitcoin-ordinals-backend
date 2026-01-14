@@ -141,10 +141,10 @@ export async function migrateJSONToDB() {
       console.log('[PointShop] 🔄 Migration: Keine JSON-Daten zum Migrieren');
       // Markiere Migration als abgeschlossen, auch wenn keine Daten vorhanden
       await pool.query(`
-        INSERT INTO migration_status (migration_name, completed, completed_at)
-        VALUES ($1, true, $2)
-        ON CONFLICT (migration_name) DO UPDATE SET completed = true, completed_at = $2
-      `, [MIGRATION_NAME, new Date()]);
+        INSERT INTO migration_status (id, migration_name, completed, completed_at)
+        VALUES ($1, $2, true, $3)
+        ON CONFLICT (migration_name) DO UPDATE SET completed = true, completed_at = $3
+      `, [`migration-${Date.now()}`, MIGRATION_NAME, new Date()]);
       migrationDone = true;
       return;
     }
@@ -158,10 +158,10 @@ export async function migrateJSONToDB() {
       console.log('[PointShop] ⚠️ Migration: Überspringe Migration, um Datenverlust zu vermeiden');
       // Markiere Migration als abgeschlossen, um zukünftige Versuche zu verhindern
       await pool.query(`
-        INSERT INTO migration_status (migration_name, completed, completed_at)
-        VALUES ($1, true, $2)
-        ON CONFLICT (migration_name) DO UPDATE SET completed = true, completed_at = $2
-      `, [MIGRATION_NAME, new Date()]);
+        INSERT INTO migration_status (id, migration_name, completed, completed_at)
+        VALUES ($1, $2, true, $3)
+        ON CONFLICT (migration_name) DO UPDATE SET completed = true, completed_at = $3
+      `, [`migration-${Date.now()}`, MIGRATION_NAME, new Date()]);
       migrationDone = true;
       return;
     }
@@ -192,10 +192,10 @@ export async function migrateJSONToDB() {
 
       // Markiere Migration als erfolgreich abgeschlossen
       await pool.query(`
-        INSERT INTO migration_status (migration_name, completed, completed_at)
-        VALUES ($1, true, $2)
-        ON CONFLICT (migration_name) DO UPDATE SET completed = true, completed_at = $2
-      `, [MIGRATION_NAME, new Date()]);
+        INSERT INTO migration_status (id, migration_name, completed, completed_at)
+        VALUES ($1, $2, true, $3)
+        ON CONFLICT (migration_name) DO UPDATE SET completed = true, completed_at = $3
+      `, [`migration-${Date.now()}`, MIGRATION_NAME, new Date()]);
 
       await pool.query('COMMIT');
       console.log(`[PointShop] ✅ Migration: ${jsonData.items.length} Items erfolgreich migriert`);
