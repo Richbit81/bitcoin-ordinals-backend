@@ -4985,8 +4985,27 @@ app.get('/api/collections/admin/json-backup', async (req, res) => {
     }
     
     // Lade Collections aus JSON (Fallback)
-    const collectionsData = collectionService.loadCollections();
-    res.json({ collections: collectionsData.collections || [] });
+    // Verwende fs direkt, da loadCollections nicht exportiert ist
+    const fs = await import('fs');
+    const path = await import('path');
+    const { fileURLToPath } = await import('url');
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const DATA_DIR = path.join(__dirname, 'data');
+    const COLLECTIONS_FILE = path.join(DATA_DIR, 'collections.json');
+    
+    let collections = [];
+    if (fs.existsSync(COLLECTIONS_FILE)) {
+      try {
+        const data = fs.readFileSync(COLLECTIONS_FILE, 'utf-8');
+        const collectionsData = JSON.parse(data);
+        collections = collectionsData.collections || [];
+      } catch (error) {
+        console.error('[Collections] Error loading JSON file:', error);
+      }
+    }
+    
+    res.json({ collections });
   } catch (error) {
     console.error('[Collections] ❌ Error loading JSON backup:', error);
     res.status(500).json({ error: error.message || 'Internal server error' });
