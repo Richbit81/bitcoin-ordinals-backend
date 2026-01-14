@@ -5181,15 +5181,24 @@ app.delete('/api/trades/offers/:offerId', (req, res) => {
 // Admin Middleware
 function requireAdmin(req, res, next) {
   // Prüfe Header, Body und Query-Parameter (unterstützt verschiedene Formate)
-  const walletAddress = req.headers['x-admin-address'] || 
-                       req.headers['X-Admin-Address'] ||
-                       req.headers['x-wallet-address'] || 
-                       req.headers['X-Wallet-Address'] ||
-                       req.body.walletAddress || 
-                       req.body.adminAddress ||
-                       req.query.walletAddress ||
-                       req.query.adminAddress ||
-                       req.query.address;
+  // Filtere 'undefined' Strings und leere Werte heraus
+  const getValidAddress = (value) => {
+    if (!value) return null;
+    if (typeof value === 'string' && (value === 'undefined' || value === 'null' || value.trim() === '')) {
+      return null;
+    }
+    return value;
+  };
+  
+  const walletAddress = getValidAddress(req.headers['x-admin-address']) || 
+                       getValidAddress(req.headers['X-Admin-Address']) ||
+                       getValidAddress(req.headers['x-wallet-address']) || 
+                       getValidAddress(req.headers['X-Wallet-Address']) ||
+                       getValidAddress(req.body.walletAddress) || 
+                       getValidAddress(req.body.adminAddress) ||
+                       getValidAddress(req.query.walletAddress) ||
+                       getValidAddress(req.query.adminAddress) ||
+                       getValidAddress(req.query.address);
   
   console.log(`[requireAdmin] 🔍 Checking admin access...`);
   console.log(`[requireAdmin] Headers:`, {
