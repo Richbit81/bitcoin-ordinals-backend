@@ -4868,21 +4868,16 @@ app.post('/api/collections/mint-original', async (req, res) => {
     // Wenn signedPsbt vorhanden ist, broadcasten
     if (signedPsbt) {
       console.log(`[Collections] 🔄 Broadcasting signed PSBT for ${item.inscriptionId} to ${walletAddress}`);
+      console.log(`[Collections] Signed PSBT format: ${signedPsbt.length} chars, isHex: ${/^[0-9a-fA-F]+$/.test(signedPsbt)}`);
       
-      // Konvertiere Base64 zu Hex falls nötig (wie im Point Shop)
-      let signedTxHex = signedPsbt;
-      if (signedPsbt && !/^[0-9a-fA-F]+$/.test(signedPsbt)) {
-        // Ist Base64, konvertiere zu Hex
-        console.log('[Collections] Converting Base64 PSBT to Hex...');
-        const binaryString = Buffer.from(signedPsbt, 'base64');
-        signedTxHex = binaryString.toString('hex');
-      }
-      
+      // WICHTIG: transferOrdinal kann sowohl Base64 als auch Hex verarbeiten
+      // Es erkennt automatisch das Format und finalisiert die PSBT
+      // Daher müssen wir NICHT konvertieren - transferOrdinal macht das selbst!
       const transferResult = await ordinalTransferService.transferOrdinal(
         item.inscriptionId,
         walletAddress,
         parseInt(feeRate, 10),
-        signedTxHex
+        signedPsbt // Kann Base64 oder Hex sein - transferOrdinal erkennt es
       );
       
       console.log(`[Collections] ✅ Original ordinal ${item.inscriptionId} transferred to ${walletAddress}`);
