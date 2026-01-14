@@ -4919,8 +4919,8 @@ app.post('/api/collections/mint-original', async (req, res) => {
         });
       }
     } 
-    // Wenn signedPsbt vorhanden ist (vom Frontend), broadcasten
-    else if (signedPsbt) {
+    // Wenn signedPsbt vorhanden ist (vom Frontend ODER vom Admin-Panel), broadcasten
+    if (signedPsbt) {
       console.log(`[Collections] 🔄 Broadcasting signed PSBT for ${item.inscriptionId} to ${walletAddress}`);
       console.log(`[Collections] Signed PSBT format: ${signedPsbt.length} chars, isHex: ${/^[0-9a-fA-F]+$/.test(signedPsbt)}`);
       
