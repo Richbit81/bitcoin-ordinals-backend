@@ -5081,6 +5081,7 @@ app.post('/api/collections/admin/restore-from-json', async (req, res) => {
           price: collectionData.price || 0,
           items: collectionData.items || [],
           category: collectionData.category || 'default',
+          page: collectionData.page || null,
           mintType: collectionData.mintType || collectionData.mint_type || 'individual',
         });
         restoredCount++;

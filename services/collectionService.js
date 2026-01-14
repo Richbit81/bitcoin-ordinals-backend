@@ -50,7 +50,7 @@ function saveCollections(data) {
 }
 
 // Exportiere für Admin-Endpoints
-export { loadCollections };
+export { loadCollections, saveCollections };
 
 /**
  * Erstelle eine neue Kollektion
