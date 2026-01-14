@@ -4865,19 +4865,71 @@ app.post('/api/collections/mint-original', async (req, res) => {
       return res.status(400).json({ error: 'Item not found or not an original ordinal' });
     }
 
-    // Wenn signedPsbt vorhanden ist, broadcasten
-    if (signedPsbt) {
+    // WICHTIG: Für Original Items, die von Admin-Adressen gehalten werden:
+    // Der Benutzer kann die PSBT nicht signieren, weil er die Admin-Adresse nicht kontrolliert
+    // Daher signiert der Admin die PSBT im Backend (wenn ADMIN_PRIVATE_KEY gesetzt ist)
+    // Oder der Benutzer muss die PSBT signieren (wenn er die ownerAddress kontrolliert)
+    
+    const psbtData = await ordinalTransferService.preparePresignedTransfer(
+      item.inscriptionId,
+      walletAddress,
+      parseInt(feeRate, 10)
+    );
+    
+    const ownerAddress = psbtData.ownerAddress;
+    const isAdminAddress = ownerAddress && ADMIN_ADDRESSES.some(addr => addr.toLowerCase() === ownerAddress.toLowerCase());
+    
+    // Wenn die ownerAddress eine Admin-Adresse ist, signiere die PSBT im Backend
+    if (isAdminAddress && process.env.ADMIN_PRIVATE_KEY) {
+      console.log(`[Collections] 🔐 Admin address detected - signing PSBT in backend`);
+      console.log(`[Collections] Owner address: ${ownerAddress} (admin address)`);
+      
+      try {
+        // Signiere die PSBT im Backend mit Admin-Private-Key
+        const signedPsbt = await ordinalTransferService.signPSBTWithAdmin(psbtData.psbtBase64);
+        
+        // Finalisiere und broadcast die PSBT
+        const transferResult = await ordinalTransferService.transferOrdinal(
+          item.inscriptionId,
+          walletAddress,
+          parseInt(feeRate, 10),
+          signedPsbt
+        );
+        
+        console.log(`[Collections] ✅ Original ordinal ${item.inscriptionId} transferred to ${walletAddress} (admin-signed)`);
+        console.log(`[Collections] 📝 Transaction ID: ${transferResult.txid}`);
+        
+        res.json({
+          success: true,
+          message: 'Transfer completed successfully (admin-signed)',
+          txid: transferResult.txid,
+          inscriptionId: item.inscriptionId,
+        });
+      } catch (signError) {
+        console.error(`[Collections] ❌ Failed to sign PSBT with admin key:`, signError);
+        // Fallback: Versuche Frontend-Signing
+        console.log(`[Collections] ⚠️ Falling back to frontend signing`);
+        res.json({
+          success: true,
+          requiresSigning: true,
+          psbtBase64: psbtData.psbtBase64,
+          inscriptionId: item.inscriptionId,
+          feeRate: parseInt(feeRate, 10),
+          recipientAddress: walletAddress,
+          ownerAddress: ownerAddress,
+        });
+      }
+    } 
+    // Wenn signedPsbt vorhanden ist (vom Frontend), broadcasten
+    else if (signedPsbt) {
       console.log(`[Collections] 🔄 Broadcasting signed PSBT for ${item.inscriptionId} to ${walletAddress}`);
       console.log(`[Collections] Signed PSBT format: ${signedPsbt.length} chars, isHex: ${/^[0-9a-fA-F]+$/.test(signedPsbt)}`);
       
-      // WICHTIG: transferOrdinal kann sowohl Base64 als auch Hex verarbeiten
-      // Es erkennt automatisch das Format und finalisiert die PSBT
-      // Daher müssen wir NICHT konvertieren - transferOrdinal macht das selbst!
       const transferResult = await ordinalTransferService.transferOrdinal(
         item.inscriptionId,
         walletAddress,
         parseInt(feeRate, 10),
-        signedPsbt // Kann Base64 oder Hex sein - transferOrdinal erkennt es
+        signedPsbt
       );
       
       console.log(`[Collections] ✅ Original ordinal ${item.inscriptionId} transferred to ${walletAddress}`);
@@ -4889,17 +4941,11 @@ app.post('/api/collections/mint-original', async (req, res) => {
         txid: transferResult.txid,
         inscriptionId: item.inscriptionId,
       });
-    } else {
-      // Erstelle PSBT für Frontend-Signing
+    } 
+    // Sonst: Erstelle PSBT für Frontend-Signing
+    else {
       console.log(`[Collections] 🔄 Creating PSBT for ${item.inscriptionId} to ${walletAddress}`);
-      
-      const psbtData = await ordinalTransferService.preparePresignedTransfer(
-        item.inscriptionId,
-        walletAddress,
-        parseInt(feeRate, 10)
-      );
-      
-      console.log(`[Collections] ✅ PSBT created for ${item.inscriptionId} (ready for wallet signing)`);
+      console.log(`[Collections] Owner address: ${ownerAddress} (user will sign)`);
       
       res.json({
         success: true,
@@ -4908,7 +4954,7 @@ app.post('/api/collections/mint-original', async (req, res) => {
         inscriptionId: item.inscriptionId,
         feeRate: parseInt(feeRate, 10),
         recipientAddress: walletAddress,
-        ownerAddress: psbtData.ownerAddress, // Input address that controls the ordinal
+        ownerAddress: ownerAddress,
       });
     }
   } catch (error) {

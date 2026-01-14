@@ -18,6 +18,32 @@ const NETWORK = bitcoin.networks.bitcoin;
 const UNISAT_API_KEY = process.env.UNISAT_API_KEY;
 const UNISAT_API_URL = process.env.UNISAT_API_URL || 'https://open-api.unisat.io';
 
+// Admin Wallet privater Key (aus Environment Variable)
+// Format: WIF (Wallet Import Format) oder hex
+const ADMIN_PRIVATE_KEY = process.env.ADMIN_PRIVATE_KEY || process.env.ADMIN_WIF;
+
+/**
+ * Erstelle Admin-Wallet KeyPair aus privatem Key
+ */
+function getAdminKeyPair() {
+  if (!ADMIN_PRIVATE_KEY) {
+    throw new Error('ADMIN_PRIVATE_KEY or ADMIN_WIF not set in environment variables');
+  }
+
+  try {
+    // Versuche WIF-Format zuerst (typischerweise 51-52 Zeichen)
+    if (ADMIN_PRIVATE_KEY.length === 52 || ADMIN_PRIVATE_KEY.length === 51) {
+      return ECPair.fromWIF(ADMIN_PRIVATE_KEY, NETWORK);
+    }
+    
+    // Sonst versuche Hex-Format
+    const privateKeyBuffer = Buffer.from(ADMIN_PRIVATE_KEY, 'hex');
+    return ECPair.fromPrivateKey(privateKeyBuffer, { network: NETWORK });
+  } catch (error) {
+    throw new Error(`Failed to parse admin private key: ${error.message}`);
+  }
+}
+
 /**
  * Creates an UNSIGNED PSBT for transferring an ordinal inscription
  * This PSBT will be signed by the wallet in the frontend (NO PRIVATE KEY NEEDED!)
