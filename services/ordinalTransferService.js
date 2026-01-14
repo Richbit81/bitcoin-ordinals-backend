@@ -420,7 +420,7 @@ export async function broadcastPresignedTx(signedTxHex) {
  * @param {string} inscriptionId - The inscription ID to transfer
  * @param {string} recipientAddress - The recipient Bitcoin address
  * @param {number} feeRate - Fee rate in sat/vB (optional if using pre-signed)
- * @param {string} presignedTxHex - REQUIRED: Pre-signed transaction hex
+ * @param {string} presignedTxHex - REQUIRED: Pre-signed PSBT (base64 or hex) or final transaction hex
  * @returns {Promise<{txid: string}>}
  */
 export async function transferOrdinal(inscriptionId, recipientAddress, feeRate = 5, presignedTxHex = null) {
@@ -431,8 +431,31 @@ export async function transferOrdinal(inscriptionId, recipientAddress, feeRate =
       throw new Error('Pre-signed transaction required. Please use preparePresignedTransfer to create a PSBT, sign it with your wallet in the frontend, and then call this function with the signed transaction hex.');
     }
 
-    console.log(`[OrdinalTransfer] Broadcasting pre-signed transaction for ${inscriptionId}`);
-    return await broadcastPresignedTx(presignedTxHex);
+    console.log(`[OrdinalTransfer] Processing pre-signed transaction for ${inscriptionId}`);
+    console.log(`[OrdinalTransfer] Input length: ${presignedTxHex.length} chars`);
+    
+    // Prüfe ob es eine PSBT (base64/hex) oder bereits eine finalisierte Transaction (hex) ist
+    let finalTxHex = presignedTxHex;
+    
+    // Versuche, es als PSBT zu parsen (wenn es eine PSBT ist, muss sie finalisiert werden)
+    try {
+      // Wenn es base64 ist und mit 'cHNidP8BA' beginnt (PSBT magic bytes in base64)
+      if (presignedTxHex.startsWith('cHNidP8BA') || presignedTxHex.length > 200) {
+        console.log('[OrdinalTransfer] Detected PSBT format, finalizing...');
+        finalTxHex = finalizeSignedPSBT(presignedTxHex);
+        console.log(`[OrdinalTransfer] ✅ PSBT finalized, transaction hex length: ${finalTxHex.length}`);
+      } else {
+        // Vermutlich bereits eine finalisierte Transaction
+        console.log('[OrdinalTransfer] Assuming already finalized transaction hex');
+      }
+    } catch (psbtError) {
+      // Wenn PSBT-Parsing fehlschlägt, versuche es als finalisierte Transaction
+      console.log('[OrdinalTransfer] Not a PSBT, using as final transaction hex');
+      finalTxHex = presignedTxHex;
+    }
+    
+    console.log(`[OrdinalTransfer] Broadcasting final transaction for ${inscriptionId}`);
+    return await broadcastPresignedTx(finalTxHex);
   } catch (error) {
     console.error('[OrdinalTransfer] Error transferring ordinal:', error);
     throw error;
