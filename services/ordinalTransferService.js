@@ -508,32 +508,45 @@ export async function transferOrdinal(inscriptionId, recipientAddress, feeRate =
       // Prüfe ob es eine PSBT ist (Base64 mit PSBT magic bytes oder Hex)
       const isBase64PSBT = presignedTxHex.startsWith('cHNidP8BA'); // PSBT magic bytes in base64
       const isHexPSBT = /^[0-9a-fA-F]+$/.test(presignedTxHex) && presignedTxHex.length > 200 && presignedTxHex.length < 2000;
-      const looksLikePSBT = presignedTxHex.length > 200 && presignedTxHex.length < 10000;
+      const isBase64String = !/^[0-9a-fA-F]+$/.test(presignedTxHex) && presignedTxHex.length > 100; // Nicht-Hex, aber lang genug
       
-      if (isBase64PSBT || (isHexPSBT && looksLikePSBT)) {
-        console.log('[OrdinalTransfer] Detected PSBT format, finalizing...');
-        console.log(`[OrdinalTransfer] Input format: ${isBase64PSBT ? 'Base64' : 'Hex'}, length: ${presignedTxHex.length}`);
+      console.log(`[OrdinalTransfer] Input analysis: isBase64PSBT=${isBase64PSBT}, isHexPSBT=${isHexPSBT}, isBase64String=${isBase64String}, length=${presignedTxHex.length}`);
+      
+      // Wenn es Base64 ist (entweder PSBT magic bytes oder einfach nicht-Hex), versuche es als PSBT zu finalisieren
+      if (isBase64PSBT || (isBase64String && !isHexPSBT)) {
+        console.log('[OrdinalTransfer] Detected Base64 PSBT format, finalizing...');
         finalTxHex = finalizeSignedPSBT(presignedTxHex);
         console.log(`[OrdinalTransfer] ✅ PSBT finalized, transaction hex length: ${finalTxHex.length}`);
-      } else {
+      } else if (isHexPSBT) {
         // Prüfe ob es bereits eine finalisierte Transaction ist (hex, typischerweise ~500-1000 chars)
-        const isHexTx = /^[0-9a-fA-F]+$/.test(presignedTxHex);
-        if (isHexTx && presignedTxHex.length > 200 && presignedTxHex.length < 2000) {
+        // oder eine Hex-PSBT (länger, ~2000+ chars)
+        if (presignedTxHex.length > 200 && presignedTxHex.length < 2000) {
           console.log('[OrdinalTransfer] Assuming already finalized transaction hex');
+          finalTxHex = presignedTxHex;
         } else {
-          // Versuche trotzdem zu finalisieren (könnte Base64 sein)
-          console.log('[OrdinalTransfer] Attempting to finalize as PSBT (unknown format)...');
+          // Längere Hex-Strings könnten Hex-PSBTs sein
+          console.log('[OrdinalTransfer] Attempting to finalize as Hex PSBT...');
           try {
             finalTxHex = finalizeSignedPSBT(presignedTxHex);
-            console.log(`[OrdinalTransfer] ✅ PSBT finalized successfully`);
+            console.log(`[OrdinalTransfer] ✅ Hex PSBT finalized successfully`);
           } catch (finalizeError) {
             console.warn('[OrdinalTransfer] ⚠️ Finalization failed, using as-is:', finalizeError.message);
             finalTxHex = presignedTxHex;
           }
         }
+      } else {
+        // Unbekanntes Format - versuche trotzdem zu finalisieren
+        console.log('[OrdinalTransfer] Unknown format, attempting to finalize as PSBT...');
+        try {
+          finalTxHex = finalizeSignedPSBT(presignedTxHex);
+          console.log(`[OrdinalTransfer] ✅ PSBT finalized successfully`);
+        } catch (finalizeError) {
+          console.error('[OrdinalTransfer] ❌ Finalization failed:', finalizeError.message);
+          throw new Error(`Failed to process transaction: ${finalizeError.message}`);
+        }
       }
     } catch (psbtError) {
-      // Wenn PSBT-Parsing fehlschlägt, versuche es als finalisierte Transaction
+      // Wenn PSBT-Parsing fehlschlägt, ist es wahrscheinlich bereits eine finalisierte Transaction
       console.error('[OrdinalTransfer] ❌ PSBT parsing error:', psbtError.message);
       console.log('[OrdinalTransfer] Using input as final transaction hex');
       finalTxHex = presignedTxHex;
