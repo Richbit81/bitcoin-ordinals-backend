@@ -449,6 +449,8 @@ export async function broadcastPresignedTx(signedTxHex) {
         
         if (broadcastUrl.includes('mempool.space')) {
           // Blockstream Mempool API (kein Auth benötigt)
+          // Erwartet raw transaction hex als plain text
+          console.log(`[OrdinalTransfer] Broadcasting to Blockstream Mempool (raw hex, length: ${signedTxHex.length})`);
           broadcastResponse = await fetch(broadcastUrl, {
             method: 'POST',
             headers: {
@@ -458,6 +460,8 @@ export async function broadcastPresignedTx(signedTxHex) {
           });
         } else {
           // UniSat API (mit Auth)
+          // Erwartet JSON mit rawtx field
+          console.log(`[OrdinalTransfer] Broadcasting to UniSat API (JSON, hex length: ${signedTxHex.length})`);
           broadcastResponse = await fetch(broadcastUrl, {
             method: 'POST',
             headers: {
@@ -583,8 +587,14 @@ export async function transferOrdinal(inscriptionId, recipientAddress, feeRate =
       // Wenn es Base64 ist (entweder PSBT magic bytes oder einfach nicht-Hex), versuche es als PSBT zu finalisieren
       if (isBase64PSBT || (isBase64String && !isHexPSBT)) {
         console.log('[OrdinalTransfer] Detected Base64 PSBT format, finalizing...');
-        finalTxHex = finalizeSignedPSBT(presignedTxHex);
-        console.log(`[OrdinalTransfer] ✅ PSBT finalized, transaction hex length: ${finalTxHex.length}`);
+        try {
+          finalTxHex = finalizeSignedPSBT(presignedTxHex);
+          console.log(`[OrdinalTransfer] ✅ PSBT finalized, transaction hex length: ${finalTxHex.length}`);
+        } catch (finalizeError) {
+          console.error(`[OrdinalTransfer] ❌ Failed to finalize Base64 PSBT:`, finalizeError.message);
+          console.error(`[OrdinalTransfer] PSBT preview: ${presignedTxHex.substring(0, 100)}...`);
+          throw new Error(`Failed to finalize PSBT: ${finalizeError.message}`);
+        }
       } else if (isHexPSBT) {
         // Prüfe ob es bereits eine finalisierte Transaction ist (hex, typischerweise ~500-1000 chars)
         // oder eine Hex-PSBT (länger, ~2000+ chars)
