@@ -4881,13 +4881,13 @@ app.post('/api/collections/mint-original', async (req, res) => {
     const ownerAddress = psbtData.ownerAddress;
     const isAdminAddress = ownerAddress && ADMIN_ADDRESSES.some(addr => addr.toLowerCase() === ownerAddress.toLowerCase());
     
-    // Wenn die ownerAddress eine Admin-Adresse ist:
-    // Option 1: ADMIN_PRIVATE_KEY gesetzt -> automatische Signatur im Backend
-    // Option 2: Kein ADMIN_PRIVATE_KEY -> Transfer-Queue für Admin-Signatur (sicherer)
+    // WICHTIG: Für sofortige Transfers MUSS ADMIN_PRIVATE_KEY gesetzt sein!
+    // Ohne Private Key kann der Admin die PSBT nicht automatisch signieren.
+    // Für "sofort" nach Kauf gibt es keine Alternative - der Admin MUSS signieren.
     if (isAdminAddress) {
-      // Option 1: Automatische Signatur (wenn ADMIN_PRIVATE_KEY gesetzt)
+      // Automatische Signatur (wenn ADMIN_PRIVATE_KEY gesetzt) - SOFORT!
       if (process.env.ADMIN_PRIVATE_KEY) {
-        console.log(`[Collections] 🔐 Admin address detected - signing PSBT automatically in backend`);
+        console.log(`[Collections] 🔐 Admin address detected - signing PSBT automatically in backend (INSTANT TRANSFER)`);
         console.log(`[Collections] Owner address: ${ownerAddress} (admin address)`);
         
         try {
@@ -4899,85 +4899,29 @@ app.post('/api/collections/mint-original', async (req, res) => {
             signedPsbt
           );
           
-          console.log(`[Collections] ✅ Original ordinal ${item.inscriptionId} transferred to ${walletAddress} (auto-signed)`);
+          console.log(`[Collections] ✅ Original ordinal ${item.inscriptionId} transferred to ${walletAddress} (INSTANT - auto-signed)`);
           
           res.json({
             success: true,
-            message: 'Transfer completed successfully (auto-signed)',
+            message: 'Transfer completed successfully - inscription is on its way!',
             txid: transferResult.txid,
             inscriptionId: item.inscriptionId,
+            instant: true,
           });
           return; // Wichtig: Return hier
         } catch (signError) {
           console.error(`[Collections] ❌ Failed to sign PSBT with admin key:`, signError);
-          // Fallback zu Queue
-          console.log(`[Collections] ⚠️ Auto-signing failed, using transfer queue`);
+          throw new Error(`Failed to sign and transfer: ${signError.message}. Please ensure ADMIN_PRIVATE_KEY is correctly set in Railway.`);
         }
-      }
-      
-      // Option 2: Transfer-Queue (kein Private Key im Backend - sicherer!)
-      console.log(`[Collections] 📋 Creating transfer queue entry for admin signing`);
-      console.log(`[Collections] Owner address: ${ownerAddress} (admin address - requires manual signing)`);
-      
-      // Erstelle Transfer-Queue-Entry in Datenbank
-      try {
-        const transferQueueId = `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      } else {
+        // KEIN ADMIN_PRIVATE_KEY gesetzt - kann nicht sofort transferieren!
+        console.error(`[Collections] ❌ ADMIN_PRIVATE_KEY not set - cannot perform instant transfer`);
+        console.error(`[Collections] ⚠️ For instant transfers, ADMIN_PRIVATE_KEY must be set in Railway environment variables`);
         
-        // Speichere in Datenbank (wenn verfügbar) oder in Memory (für jetzt)
-        // TODO: Implementiere Datenbank-Speicherung für Transfer-Queue
-        const transferQueueEntry = {
-          id: transferQueueId,
-          inscriptionId: item.inscriptionId,
-          psbtBase64: psbtData.psbtBase64,
-          recipientAddress: walletAddress,
-          ownerAddress: ownerAddress,
-          feeRate: parseInt(feeRate, 10),
-          collectionId: collectionId,
-          itemName: item.name,
-          status: 'pending',
-          createdAt: new Date().toISOString(),
-        };
-        
-        // Speichere in Datenbank (wenn verfügbar) oder Memory
-        // TODO: Implementiere Datenbank-Speicherung für Transfer-Queue
-        // Für jetzt: Speichere in Memory (wird bei Neustart verloren, aber für Testing OK)
-        if (!global.transferQueue) {
-          global.transferQueue = [];
-        }
-        global.transferQueue.push(transferQueueEntry);
-        
-        console.log(`[Collections] 📝 Transfer queue ID: ${transferQueueId}`);
-        console.log(`[Collections] 📊 Queue size: ${global.transferQueue.length}`);
-        console.log(`[Collections] ⚠️ Admin must sign this PSBT via admin panel`);
-        
-        // Prüfe ob Admin-Wallet verbunden ist und versuche automatische Signatur
-        // TODO: Implementiere automatische Signatur über verbundenes Admin-Wallet
-        
-        res.json({
-          success: true,
-          requiresAdminSigning: true,
-          transferQueueId: transferQueueId,
-          message: 'Transfer queued for admin signing. The admin will sign and broadcast the transaction soon.',
-          estimatedTime: 'A few minutes',
-          psbtBase64: psbtData.psbtBase64, // Für Admin-Panel zum Signieren
-          inscriptionId: item.inscriptionId,
-          recipientAddress: walletAddress,
-          ownerAddress: ownerAddress,
-          feeRate: parseInt(feeRate, 10),
-        });
-        return; // Wichtig: Return hier
-      } catch (queueError) {
-        console.error(`[Collections] ❌ Failed to create transfer queue entry:`, queueError);
-        // Fallback: Frontend-Signing (wird nicht funktionieren, aber besser als nichts)
-        res.json({
-          success: true,
-          requiresSigning: true,
-          psbtBase64: psbtData.psbtBase64,
-          inscriptionId: item.inscriptionId,
-          feeRate: parseInt(feeRate, 10),
-          recipientAddress: walletAddress,
-          ownerAddress: ownerAddress,
-          warning: 'This PSBT requires admin signature. Please contact support.',
+        res.status(500).json({
+          error: 'ADMIN_PRIVATE_KEY not configured',
+          message: 'Instant transfer requires ADMIN_PRIVATE_KEY to be set in Railway. Please configure it to enable instant transfers.',
+          requiresAdminSigning: false,
         });
         return;
       }
