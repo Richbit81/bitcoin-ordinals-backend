@@ -214,6 +214,7 @@ export async function getAllCollections(category = null, page = null) {
     ...c,
     page: c.page || null,
     mintType: c.mintType || 'individual', // Default für alte Collections
+    showBanner: c.showBanner !== undefined ? c.showBanner : false, // Default für alte Collections
   }));
 }
 
@@ -409,6 +410,7 @@ export async function getAllCollectionsAdmin(category = null) {
     ...c,
     page: c.page || null,
     mintType: c.mintType || 'individual', // Default für alte Collections
+    showBanner: c.showBanner !== undefined ? c.showBanner : false, // Default für alte Collections
   }));
 }
 
