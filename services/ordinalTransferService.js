@@ -349,6 +349,45 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
 }
 
 /**
+ * Signiert eine PSBT mit dem Admin-Private-Key
+ * @param {string} psbtBase64 - Die PSBT als Base64-String
+ * @returns {Promise<string>} - Die signierte PSBT als Base64-String
+ */
+export async function signPSBTWithAdmin(psbtBase64) {
+  try {
+    console.log('[OrdinalTransfer] Signing PSBT with admin private key...');
+    
+    if (!ADMIN_PRIVATE_KEY) {
+      throw new Error('ADMIN_PRIVATE_KEY not set - cannot sign PSBT');
+    }
+    
+    const adminKeyPair = getAdminKeyPair();
+    const psbt = bitcoin.Psbt.fromBase64(psbtBase64, { network: NETWORK });
+    
+    console.log(`[OrdinalTransfer] PSBT has ${psbt.inputCount} input(s)`);
+    
+    // Signiere alle Inputs mit Admin-KeyPair
+    for (let i = 0; i < psbt.inputCount; i++) {
+      try {
+        psbt.signInput(i, adminKeyPair);
+        console.log(`[OrdinalTransfer] ✅ Input ${i} signed with admin key`);
+      } catch (signError) {
+        console.error(`[OrdinalTransfer] ❌ Failed to sign input ${i}:`, signError.message);
+        throw new Error(`Failed to sign input ${i}: ${signError.message}`);
+      }
+    }
+    
+    const signedPsbtBase64 = psbt.toBase64();
+    console.log('[OrdinalTransfer] ✅ PSBT signed with admin key');
+    
+    return signedPsbtBase64;
+  } catch (error) {
+    console.error('[OrdinalTransfer] Error signing PSBT with admin:', error);
+    throw error;
+  }
+}
+
+/**
  * Prepares an unsigned PSBT for pre-signing
  * Returns the PSBT as Base64 for wallet signing
  * @param {string} inscriptionId - The inscription ID to transfer
