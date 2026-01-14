@@ -4093,7 +4093,8 @@ app.post('/api/point-shop/mint-series', async (req, res) => {
 app.get('/api/collections', async (req, res) => {
   try {
     const category = req.query.category;
-    const collections = await collectionService.getAllCollections(category);
+    const page = req.query.page;
+    const collections = await collectionService.getAllCollections(category, page);
     res.json({ collections });
   } catch (error) {
     console.error('[Collections] ❌ Error:', error);
@@ -4594,6 +4595,8 @@ app.post('/api/collections/admin/create', async (req, res) => {
       thumbnail: thumbnail || '',
       price: parseFloat(price),
       category: req.body.category || 'default', // Unterstützung für Kategorien
+      page: req.body.page || null, // Seiten-Zuordnung (z.B. 'smile-a-bit', 'tech-games', etc.)
+      mintType: req.body.mintType || 'individual',
       items: items.map(item => ({
         inscriptionId: item.inscriptionId,
         name: item.name || `Item ${item.inscriptionId.slice(0, 10)}...`,
@@ -4647,6 +4650,7 @@ app.put('/api/collections/admin/:id', async (req, res) => {
     if (thumbnail !== undefined) updates.thumbnail = thumbnail;
     if (price !== undefined) updates.price = parseFloat(price);
     if (req.body.category !== undefined) updates.category = req.body.category;
+    if (req.body.page !== undefined) updates.page = req.body.page;
     if (mintType !== undefined) updates.mintType = mintType;
     if (items !== undefined && Array.isArray(items)) {
       updates.items = items.map(item => ({

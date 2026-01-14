@@ -113,6 +113,7 @@ export async function createTables() {
         thumbnail TEXT,
         price DECIMAL(18, 8) NOT NULL,
         category VARCHAR(100) DEFAULT 'default',
+        page VARCHAR(100) DEFAULT NULL,
         mint_type VARCHAR(20) DEFAULT 'individual',
         items JSONB NOT NULL,
         active BOOLEAN DEFAULT true,
@@ -120,6 +121,19 @@ export async function createTables() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT check_mint_type CHECK (mint_type IN ('individual', 'random'))
       );
+    `);
+    
+    // Füge 'page' Spalte hinzu falls sie nicht existiert (für bestehende Tabellen)
+    await pool.query(`
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'collections' AND column_name = 'page'
+        ) THEN
+          ALTER TABLE collections ADD COLUMN page VARCHAR(100) DEFAULT NULL;
+        END IF;
+      END $$;
     `);
 
     // Migration Status Tabelle (verhindert mehrfache Migrationen)

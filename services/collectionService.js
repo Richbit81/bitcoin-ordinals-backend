@@ -2,6 +2,7 @@
  * Collection Service für Backend
  * Verwaltet Kollektionen von Ordinals
  * JETZT MIT PostgreSQL Support für persistente Speicherung
+ * BOMBENSICHER: Dual-Write (PostgreSQL + JSON) für maximale Sicherheit
  */
 
 import fs from 'fs';
@@ -36,9 +37,6 @@ function loadCollections() {
   return { collections: [] };
 }
 
-// Exportiere für Admin-Endpoints
-export { loadCollections };
-
 /**
  * Speichere Collections Daten (JSON Fallback)
  */
@@ -51,8 +49,12 @@ function saveCollections(data) {
   }
 }
 
+// Exportiere für Admin-Endpoints
+export { loadCollections };
+
 /**
  * Erstelle eine neue Kollektion
+ * BOMBENSICHER: Speichert IMMER in PostgreSQL UND JSON (Dual-Write)
  */
 export async function createCollection(data) {
   const newCollection = {
@@ -63,25 +65,30 @@ export async function createCollection(data) {
     price: parseFloat(data.price) || 0,
     items: data.items || [],
     category: data.category || 'default',
+    page: data.page || null,
     mintType: data.mintType || 'individual',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     active: true,
   };
   
-  // Speichere in PostgreSQL wenn verfügbar
+  let dbSuccess = false;
+  let jsonSuccess = false;
+  
+  // BOMBENSICHER: Speichere IMMER in PostgreSQL wenn verfügbar
   if (isDatabaseAvailable()) {
     try {
       const pool = getPool();
       await pool.query(`
-        INSERT INTO collections (id, name, description, thumbnail, price, category, mint_type, items, active, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        INSERT INTO collections (id, name, description, thumbnail, price, category, page, mint_type, items, active, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (id) DO UPDATE SET
           name = EXCLUDED.name,
           description = EXCLUDED.description,
           thumbnail = EXCLUDED.thumbnail,
           price = EXCLUDED.price,
           category = EXCLUDED.category,
+          page = EXCLUDED.page,
           mint_type = EXCLUDED.mint_type,
           items = EXCLUDED.items,
           active = EXCLUDED.active,
@@ -93,25 +100,46 @@ export async function createCollection(data) {
         newCollection.thumbnail,
         newCollection.price,
         newCollection.category,
+        newCollection.page,
         newCollection.mintType,
         JSON.stringify(newCollection.items),
         newCollection.active,
         newCollection.createdAt,
         newCollection.updatedAt,
       ]);
+      dbSuccess = true;
       console.log(`[CollectionService] ✅ Collection saved to PostgreSQL: ${newCollection.id}`);
     } catch (error) {
       console.error('[CollectionService] ❌ Error saving to PostgreSQL:', error);
-      // Fallback zu JSON
-      const collectionsData = loadCollections();
-      collectionsData.collections.push(newCollection);
-      saveCollections(collectionsData);
+      dbSuccess = false;
     }
-  } else {
-    // JSON Fallback
+  }
+  
+  // BOMBENSICHER: Speichere IMMER auch in JSON (Dual-Write für maximale Sicherheit)
+  try {
     const collectionsData = loadCollections();
+    // Entferne alte Collection mit gleicher ID falls vorhanden
+    collectionsData.collections = collectionsData.collections.filter(c => c.id !== newCollection.id);
     collectionsData.collections.push(newCollection);
     saveCollections(collectionsData);
+    jsonSuccess = true;
+    console.log(`[CollectionService] ✅ Collection saved to JSON: ${newCollection.id}`);
+  } catch (error) {
+    console.error('[CollectionService] ❌ Error saving to JSON:', error);
+    jsonSuccess = false;
+  }
+  
+  // Wenn beide fehlschlagen, werfe Fehler
+  if (!dbSuccess && !jsonSuccess) {
+    throw new Error('Failed to save collection to both PostgreSQL and JSON');
+  }
+  
+  // Wenn nur einer fehlschlägt, logge Warnung aber returniere trotzdem
+  if (!dbSuccess) {
+    console.warn(`[CollectionService] ⚠️ Collection saved only to JSON (PostgreSQL failed): ${newCollection.id}`);
+  }
+  if (!jsonSuccess) {
+    console.warn(`[CollectionService] ⚠️ Collection saved only to PostgreSQL (JSON failed): ${newCollection.id}`);
   }
   
   console.log(`[CollectionService] ✅ Collection created: ${newCollection.id} - ${newCollection.name}`);
@@ -120,17 +148,26 @@ export async function createCollection(data) {
 
 /**
  * Hole alle aktiven Kollektionen
+ * Unterstützt Filterung nach category, page oder beidem
  */
-export async function getAllCollections(category = null) {
+export async function getAllCollections(category = null, page = null) {
   if (isDatabaseAvailable()) {
     try {
       const pool = getPool();
       let query = 'SELECT * FROM collections WHERE active = true';
       const params = [];
+      let paramIndex = 1;
       
       if (category) {
-        query += ' AND category = $1';
+        query += ` AND category = $${paramIndex}`;
         params.push(category);
+        paramIndex++;
+      }
+      
+      if (page) {
+        query += ` AND page = $${paramIndex}`;
+        params.push(page);
+        paramIndex++;
       }
       
       query += ' ORDER BY created_at DESC';
@@ -144,6 +181,7 @@ export async function getAllCollections(category = null) {
         price: parseFloat(row.price) || 0,
         items: row.items || [],
         category: row.category || 'default',
+        page: row.page || null,
         mintType: row.mint_type || 'individual',
         createdAt: row.created_at?.toISOString() || new Date().toISOString(),
         updatedAt: row.updated_at?.toISOString() || new Date().toISOString(),
@@ -163,8 +201,13 @@ export async function getAllCollections(category = null) {
     collections = collections.filter(c => (c.category || 'default') === category);
   }
   
+  if (page) {
+    collections = collections.filter(c => c.page === page);
+  }
+  
   return collections.map(c => ({
     ...c,
+    page: c.page || null,
     mintType: c.mintType || 'individual', // Default für alte Collections
   }));
 }
@@ -188,6 +231,7 @@ export async function getCollection(collectionId) {
           price: parseFloat(row.price) || 0,
           items: row.items || [],
           category: row.category || 'default',
+          page: row.page || null,
           mintType: row.mint_type || 'individual',
           createdAt: row.created_at?.toISOString() || new Date().toISOString(),
           updatedAt: row.updated_at?.toISOString() || new Date().toISOString(),
@@ -207,6 +251,7 @@ export async function getCollection(collectionId) {
   if (collection) {
     return {
       ...collection,
+      page: collection.page || null,
       mintType: collection.mintType || 'individual', // Default für alte Collections
     };
   }
@@ -216,6 +261,7 @@ export async function getCollection(collectionId) {
 
 /**
  * Aktualisiere eine Kollektion
+ * BOMBENSICHER: Aktualisiert IMMER PostgreSQL UND JSON (Dual-Write)
  */
 export async function updateCollection(collectionId, updates) {
   const updatedCollection = {
@@ -223,7 +269,10 @@ export async function updateCollection(collectionId, updates) {
     updatedAt: new Date().toISOString(),
   };
   
-  // Speichere in PostgreSQL wenn verfügbar
+  let dbSuccess = false;
+  let jsonSuccess = false;
+  
+  // BOMBENSICHER: Aktualisiere IMMER in PostgreSQL wenn verfügbar
   if (isDatabaseAvailable()) {
     try {
       const pool = getPool();
@@ -234,42 +283,61 @@ export async function updateCollection(collectionId, updates) {
           thumbnail = COALESCE($3, thumbnail),
           price = COALESCE($4, price),
           category = COALESCE($5, category),
-          mint_type = COALESCE($6, mint_type),
-          items = COALESCE($7, items),
-          active = COALESCE($8, active),
-          updated_at = $9
-        WHERE id = $10
+          page = COALESCE($6, page),
+          mint_type = COALESCE($7, mint_type),
+          items = COALESCE($8, items),
+          active = COALESCE($9, active),
+          updated_at = $10
+        WHERE id = $11
       `, [
         updates.name || null,
         updates.description !== undefined ? updates.description : null,
         updates.thumbnail !== undefined ? updates.thumbnail : null,
         updates.price !== undefined ? parseFloat(updates.price) : null,
         updates.category || null,
+        updates.page !== undefined ? updates.page : null,
         updates.mintType || null,
         updates.items ? JSON.stringify(updates.items) : null,
         updates.active !== undefined ? updates.active : null,
         updatedCollection.updatedAt,
         collectionId,
       ]);
+      dbSuccess = true;
       console.log(`[CollectionService] ✅ Collection updated in PostgreSQL: ${collectionId}`);
     } catch (error) {
       console.error('[CollectionService] ❌ Error updating in PostgreSQL:', error);
-      // Fallback zu JSON
-      const collectionsData = loadCollections();
-      const collection = collectionsData.collections.find(c => c.id === collectionId);
-      if (collection) {
-        Object.assign(collection, updatedCollection);
-        saveCollections(collectionsData);
-      }
+      dbSuccess = false;
     }
-  } else {
-    // JSON Fallback
+  }
+  
+  // BOMBENSICHER: Aktualisiere IMMER auch in JSON (Dual-Write)
+  try {
     const collectionsData = loadCollections();
     const collection = collectionsData.collections.find(c => c.id === collectionId);
     if (collection) {
       Object.assign(collection, updatedCollection);
       saveCollections(collectionsData);
+      jsonSuccess = true;
+      console.log(`[CollectionService] ✅ Collection updated in JSON: ${collectionId}`);
+    } else {
+      console.warn(`[CollectionService] ⚠️ Collection not found in JSON for update: ${collectionId}`);
     }
+  } catch (error) {
+    console.error('[CollectionService] ❌ Error updating in JSON:', error);
+    jsonSuccess = false;
+  }
+  
+  // Wenn beide fehlschlagen, werfe Fehler
+  if (!dbSuccess && !jsonSuccess) {
+    throw new Error(`Failed to update collection ${collectionId} in both PostgreSQL and JSON`);
+  }
+  
+  // Wenn nur einer fehlschlägt, logge Warnung
+  if (!dbSuccess) {
+    console.warn(`[CollectionService] ⚠️ Collection updated only in JSON (PostgreSQL failed): ${collectionId}`);
+  }
+  if (!jsonSuccess) {
+    console.warn(`[CollectionService] ⚠️ Collection updated only in PostgreSQL (JSON failed): ${collectionId}`);
   }
   
   return updatedCollection;
@@ -280,6 +348,59 @@ export async function updateCollection(collectionId, updates) {
  */
 export async function deactivateCollection(collectionId) {
   return await updateCollection(collectionId, { active: false });
+}
+
+/**
+ * Hole alle Kollektionen (auch inaktive) - für Admin
+ */
+export async function getAllCollectionsAdmin(category = null) {
+  if (isDatabaseAvailable()) {
+    try {
+      const pool = getPool();
+      let query = 'SELECT * FROM collections';
+      const params = [];
+      
+      if (category) {
+        query += ' WHERE category = $1';
+        params.push(category);
+      }
+      
+      query += ' ORDER BY created_at DESC';
+      
+      const result = await pool.query(query, params);
+      return result.rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        description: row.description || '',
+        thumbnail: row.thumbnail || '',
+        price: parseFloat(row.price) || 0,
+        items: row.items || [],
+        category: row.category || 'default',
+        page: row.page || null,
+        mintType: row.mint_type || 'individual',
+        createdAt: row.created_at?.toISOString() || new Date().toISOString(),
+        updatedAt: row.updated_at?.toISOString() || new Date().toISOString(),
+        active: row.active !== false,
+      }));
+    } catch (error) {
+      console.error('[CollectionService] ❌ Error loading from PostgreSQL:', error);
+      // Fallback zu JSON
+    }
+  }
+  
+  // JSON Fallback
+  const collectionsData = loadCollections();
+  let collections = collectionsData.collections;
+  
+  if (category) {
+    collections = collections.filter(c => (c.category || 'default') === category);
+  }
+  
+  return collections.map(c => ({
+    ...c,
+    page: c.page || null,
+    mintType: c.mintType || 'individual', // Default für alte Collections
+  }));
 }
 
 /**
@@ -344,8 +465,8 @@ export async function migrateCollectionsToDB() {
     
     for (const collection of collections) {
       await pool.query(`
-        INSERT INTO collections (id, name, description, thumbnail, price, category, mint_type, items, active, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        INSERT INTO collections (id, name, description, thumbnail, price, category, page, mint_type, items, active, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (id) DO NOTHING
       `, [
         collection.id,
@@ -354,6 +475,7 @@ export async function migrateCollectionsToDB() {
         collection.thumbnail || '',
         parseFloat(collection.price) || 0,
         collection.category || 'default',
+        collection.page || null,
         collection.mintType || 'individual',
         JSON.stringify(collection.items || []),
         collection.active !== false,
