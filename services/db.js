@@ -137,6 +137,19 @@ export async function createTables() {
       END $$;
     `);
 
+    // Füge 'show_banner' Spalte hinzu falls sie nicht existiert (für bestehende Tabellen)
+    await pool.query(`
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'collections' AND column_name = 'show_banner'
+        ) THEN
+          ALTER TABLE collections ADD COLUMN show_banner BOOLEAN DEFAULT false;
+        END IF;
+      END $$;
+    `);
+
     // Migration Status Tabelle (verhindert mehrfache Migrationen)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS migration_status (

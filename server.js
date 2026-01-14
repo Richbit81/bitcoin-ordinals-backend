@@ -6,7 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
-// Force redeploy - Admin Address Update v3 - Verbessertes Logging
+// Force redeploy - Collection Improvements v4 - show_banner Migration + Admin Address + UX Improvements
 // Services
 import * as delegateRegistry from './services/delegateRegistry.js';
 import * as pointsService from './services/pointsService.js';
@@ -55,6 +55,7 @@ const DEFAULT_ADMIN_ADDRESSES = [
   '34VvkvWnRw2GVgEQaQZ6fykKbebBHiT4ft',
   'bc1p9j4g6r27yqhmp4c403vn33mz7uug439sthqngkkrylu7d7uq7d6qvz39jj',
   'bc1p8hfflnq8dspvpeqdprqkncdfnk4hl5ne0ydnlslj2sk49fu5jxns2xxmk9',
+  'bc1pv6vt56dyt5he62gnhyp3c5wqtglethjaegsmc4dxcs702sy6ccxsrhzyuj',
 ];
 
 // Wenn ADMIN_ADDRESSES als Environment Variable gesetzt ist, verwende diese, sonst die Defaults
@@ -4418,11 +4419,17 @@ app.get('/api/collections/admin/wallet-inscriptions', async (req, res) => {
           contentType: d.contentType
         })));
       } else {
-        console.warn(`[Collections] ⚠️ NO delegate inscriptions found! Total inscriptions: ${filtered.length}, HTML inscriptions: ${delegateStats.htmlInscriptions}`);
-        console.warn(`[Collections] ⚠️ This might mean:`);
-        console.warn(`[Collections]   1. Registry check failed or Registry is empty`);
-        console.warn(`[Collections]   2. Content fetch from ordinals.com failed or timed out`);
-        console.warn(`[Collections]   3. Delegate inscriptions are not in the wallet`);
+        // Nur warnen wenn tatsächlich HTML-Inskriptionen vorhanden sind, aber keine Delegates gefunden wurden
+        if (delegateStats.htmlInscriptions > 0) {
+          console.warn(`[Collections] ⚠️ NO delegate inscriptions found! Total inscriptions: ${filtered.length}, HTML inscriptions: ${delegateStats.htmlInscriptions}`);
+          console.warn(`[Collections] ⚠️ This might mean:`);
+          console.warn(`[Collections]   1. Registry check failed or Registry is empty`);
+          console.warn(`[Collections]   2. Content fetch from ordinals.com failed or timed out`);
+          console.warn(`[Collections]   3. Delegate inscriptions are not in the wallet`);
+        } else {
+          // Wenn keine HTML-Inskriptionen vorhanden sind, ist das normal (z.B. nur SVG/Bilder)
+          console.log(`[Collections] ℹ️ No delegate inscriptions found (${filtered.length} total inscriptions, ${delegateStats.htmlInscriptions} HTML inscriptions). This is normal if the wallet only contains image/SVG inscriptions.`);
+        }
       }
       
       console.log(`[Collections] 📊 Content-Type Verteilung:`, contentTypeStats);
@@ -5804,8 +5811,8 @@ async function startServer() {
   // Starte Server
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n${'═'.repeat(80)}`);
-    console.log(`🚀 SERVER START - VERSION: PostgreSQL-Persistent-v1`);
-    console.log(`📅 DEPLOYED: 2025-01-12 14:00`);
+    console.log(`🚀 SERVER START - VERSION: Collection-Improvements-v4`);
+    console.log(`📅 DEPLOYED: 2025-01-15 12:00`);
     console.log(`💾 Datenbank: ${isDatabaseAvailable() ? '✅ PostgreSQL' : '⚠️ JSON-Fallback'}`);
     console.log(`${'═'.repeat(80)}`);
     console.log(`📍 Port: ${PORT}`);
