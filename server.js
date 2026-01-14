@@ -4639,7 +4639,7 @@ app.put('/api/collections/admin/:id', async (req, res) => {
       return res.status(403).json({ error: 'Forbidden: Admin access required' });
     }
     
-    const { name, description, thumbnail, price, items } = req.body;
+    const { name, description, thumbnail, price, items, mintType } = req.body;
 
     const updates = {};
     if (name !== undefined) updates.name = name;
@@ -4647,6 +4647,7 @@ app.put('/api/collections/admin/:id', async (req, res) => {
     if (thumbnail !== undefined) updates.thumbnail = thumbnail;
     if (price !== undefined) updates.price = parseFloat(price);
     if (req.body.category !== undefined) updates.category = req.body.category;
+    if (mintType !== undefined) updates.mintType = mintType;
     if (items !== undefined && Array.isArray(items)) {
       updates.items = items.map(item => ({
         inscriptionId: item.inscriptionId,
