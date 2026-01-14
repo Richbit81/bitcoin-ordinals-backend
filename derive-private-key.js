@@ -44,16 +44,20 @@ function derivePrivateKeyFromMnemonic(mnemonic, targetAddress) {
     console.log('🔍 Prüfe verschiedene Derivation-Pfade...');
     console.log('');
     
-    // Erweiterte Suche: Prüfe verschiedene Account-Indizes, Change-Indizes und Address-Indizes
-    // Format: m/86'/0'/{account}'/{change}/{address}
+    // Erweiterte Suche: Prüfe verschiedene Standards und Pfade
+    // 1. BIP86 Taproot: m/86'/0'/{account}'/{change}/{address}
+    // 2. BIP84 Native SegWit: m/84'/0'/{account}'/{change}/{address} (konvertiert zu Taproot)
+    // 3. Andere Coin-Typen: m/86'/{coin}'/{account}'/{change}/{address}
     
-    const maxAccount = 5;  // Prüfe Account 0-4
-    const maxChange = 2;   // Prüfe Change 0-1
-    const maxAddress = 50; // Prüfe Address 0-49
+    const maxAccount = 10;  // Prüfe Account 0-9
+    const maxChange = 2;    // Prüfe Change 0-1
+    const maxAddress = 100; // Prüfe Address 0-99
     
     let checked = 0;
     let foundAddresses = [];
     
+    // 1. BIP86 Taproot (Standard für bc1p Adressen)
+    console.log('📋 Prüfe BIP86 Taproot Pfade...');
     for (let account = 0; account < maxAccount; account++) {
       for (let change = 0; change < maxChange; change++) {
         for (let address = 0; address < maxAddress; address++) {
@@ -67,18 +71,12 @@ function derivePrivateKeyFromMnemonic(mnemonic, targetAddress) {
             
             checked++;
             
-            // Zeige Fortschritt alle 50 Adressen
-            if (checked % 50 === 0) {
-              process.stdout.write(`\r🔍 Geprüft: ${checked} Adressen... (Account ${account}, Change ${change}, Address ${address})`);
-            }
-            
-            // Speichere gefundene Adressen für Debugging
-            if (checked <= 10) {
-              foundAddresses.push({ path, address: derivedAddress });
+            // Zeige Fortschritt alle 100 Adressen
+            if (checked % 100 === 0) {
+              process.stdout.write(`\r🔍 Geprüft: ${checked} Adressen... (BIP86, Account ${account}, Change ${change}, Address ${address})`);
             }
             
             if (derivedAddress.toLowerCase() === targetAddress.toLowerCase()) {
-              // Gefunden!
               const privateKeyWIF = keyPair.toWIF();
               const privateKeyHex = keyPair.privateKey.toString('hex');
               
@@ -104,7 +102,60 @@ function derivePrivateKeyFromMnemonic(mnemonic, targetAddress) {
               };
             }
           } catch (err) {
-            // Ignoriere Fehler bei einzelnen Pfaden
+            // Ignoriere Fehler
+          }
+        }
+      }
+    }
+    
+    // 2. Prüfe auch andere Coin-Typen (manche Wallets verwenden 1 statt 0)
+    console.log('');
+    console.log('📋 Prüfe alternative Coin-Typen...');
+    for (let coin = 0; coin <= 1; coin++) {
+      for (let account = 0; account < 5; account++) {
+        for (let change = 0; change < 2; change++) {
+          for (let address = 0; address < 50; address++) {
+            try {
+              const path = `m/86'/${coin}'/${account}'/${change}/${address}`;
+              const keyPair = root.derivePath(path);
+              const derivedAddress = bitcoin.payments.p2tr({
+                internalPubkey: keyPair.publicKey.slice(1, 33),
+                network: NETWORK,
+              }).address;
+              
+              checked++;
+              
+              if (checked % 100 === 0) {
+                process.stdout.write(`\r🔍 Geprüft: ${checked} Adressen... (Coin ${coin}, Account ${account})`);
+              }
+              
+              if (derivedAddress.toLowerCase() === targetAddress.toLowerCase()) {
+                const privateKeyWIF = keyPair.toWIF();
+                const privateKeyHex = keyPair.privateKey.toString('hex');
+                
+                console.log('');
+                console.log('');
+                console.log('✅✅✅ ADRESSE GEFUNDEN! ✅✅✅');
+                console.log('═══════════════════════════════════════════════════════');
+                console.log('📍 Adresse:', derivedAddress);
+                console.log('🔑 Private Key (WIF):', privateKeyWIF);
+                console.log('🔑 Private Key (Hex):', privateKeyHex);
+                console.log('📋 Derivation-Pfad:', path);
+                console.log('═══════════════════════════════════════════════════════');
+                console.log('');
+                console.log('⚠️  WICHTIG: Kopiere diesen Private Key und setze ihn in Railway als ADMIN_PRIVATE_KEY');
+                console.log('');
+                
+                return {
+                  address: derivedAddress,
+                  privateKeyWIF: privateKeyWIF,
+                  privateKeyHex: privateKeyHex,
+                  derivationPath: path,
+                };
+              }
+            } catch (err) {
+              // Ignoriere Fehler
+            }
           }
         }
       }
