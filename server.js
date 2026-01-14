@@ -4908,6 +4908,7 @@ app.post('/api/collections/mint-original', async (req, res) => {
         inscriptionId: item.inscriptionId,
         feeRate: parseInt(feeRate, 10),
         recipientAddress: walletAddress,
+        ownerAddress: psbtData.ownerAddress, // Input address that controls the ordinal
       });
     }
   } catch (error) {

@@ -328,10 +328,29 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
 export async function preparePresignedTransfer(inscriptionId, recipientAddress, feeRate = 5) {
   try {
     console.log(`[OrdinalTransfer] Preparing UNSIGNED PSBT for pre-signing: ${inscriptionId} to ${recipientAddress} at ${feeRate} sat/vB`);
+    
+    // Get owner address before creating PSBT (needed for frontend)
+    let ownerAddress = null;
+    try {
+      const utxoData = await getOrdinalUTXO(inscriptionId);
+      ownerAddress = utxoData?.address || null;
+      if (ownerAddress) {
+        console.log(`[OrdinalTransfer] Owner address (input address): ${ownerAddress}`);
+      }
+    } catch (err) {
+      console.warn(`[OrdinalTransfer] ⚠️ Could not get owner address: ${err.message}`);
+    }
+    
     const psbt = await createTransferPSBT(inscriptionId, recipientAddress, feeRate);
     const psbtBase64 = psbt.toBase64();
     console.log(`[OrdinalTransfer] ✅ Unsigned PSBT created for ${inscriptionId} (ready for wallet signing)`);
-    return { psbtBase64, inscriptionId, feeRate, recipientAddress };
+    return { 
+      psbtBase64, 
+      inscriptionId, 
+      feeRate, 
+      recipientAddress,
+      ownerAddress // Return owner address so frontend knows which address controls the input
+    };
   } catch (error) {
     console.error('[OrdinalTransfer] Error preparing PSBT for pre-signing:', error);
     throw error;
