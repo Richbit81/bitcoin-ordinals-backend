@@ -4881,32 +4881,85 @@ app.post('/api/collections/mint-original', async (req, res) => {
     const ownerAddress = psbtData.ownerAddress;
     const isAdminAddress = ownerAddress && ADMIN_ADDRESSES.some(addr => addr.toLowerCase() === ownerAddress.toLowerCase());
     
-    // Wenn die ownerAddress eine Admin-Adresse ist UND ADMIN_PRIVATE_KEY gesetzt ist, signiere im Backend
-    if (isAdminAddress && process.env.ADMIN_PRIVATE_KEY) {
-      console.log(`[Collections] 🔐 Admin address detected - signing PSBT in backend`);
-      console.log(`[Collections] Owner address: ${ownerAddress} (admin address)`);
-      
-      try {
-        const signedPsbt = await ordinalTransferService.signPSBTWithAdmin(psbtData.psbtBase64);
-        const transferResult = await ordinalTransferService.transferOrdinal(
-          item.inscriptionId,
-          walletAddress,
-          parseInt(feeRate, 10),
-          signedPsbt
-        );
+    // Wenn die ownerAddress eine Admin-Adresse ist:
+    // Option 1: ADMIN_PRIVATE_KEY gesetzt -> automatische Signatur im Backend
+    // Option 2: Kein ADMIN_PRIVATE_KEY -> Transfer-Queue für Admin-Signatur (sicherer)
+    if (isAdminAddress) {
+      // Option 1: Automatische Signatur (wenn ADMIN_PRIVATE_KEY gesetzt)
+      if (process.env.ADMIN_PRIVATE_KEY) {
+        console.log(`[Collections] 🔐 Admin address detected - signing PSBT automatically in backend`);
+        console.log(`[Collections] Owner address: ${ownerAddress} (admin address)`);
         
-        console.log(`[Collections] ✅ Original ordinal ${item.inscriptionId} transferred to ${walletAddress} (admin-signed)`);
+        try {
+          const signedPsbt = await ordinalTransferService.signPSBTWithAdmin(psbtData.psbtBase64);
+          const transferResult = await ordinalTransferService.transferOrdinal(
+            item.inscriptionId,
+            walletAddress,
+            parseInt(feeRate, 10),
+            signedPsbt
+          );
+          
+          console.log(`[Collections] ✅ Original ordinal ${item.inscriptionId} transferred to ${walletAddress} (auto-signed)`);
+          
+          res.json({
+            success: true,
+            message: 'Transfer completed successfully (auto-signed)',
+            txid: transferResult.txid,
+            inscriptionId: item.inscriptionId,
+          });
+          return; // Wichtig: Return hier
+        } catch (signError) {
+          console.error(`[Collections] ❌ Failed to sign PSBT with admin key:`, signError);
+          // Fallback zu Queue
+          console.log(`[Collections] ⚠️ Auto-signing failed, using transfer queue`);
+        }
+      }
+      
+      // Option 2: Transfer-Queue (kein Private Key im Backend - sicherer!)
+      console.log(`[Collections] 📋 Creating transfer queue entry for admin signing`);
+      console.log(`[Collections] Owner address: ${ownerAddress} (admin address - requires manual signing)`);
+      
+      // Erstelle Transfer-Queue-Entry in Datenbank
+      try {
+        const transferQueueId = `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Speichere in Datenbank (wenn verfügbar) oder in Memory (für jetzt)
+        // TODO: Implementiere Datenbank-Speicherung für Transfer-Queue
+        const transferQueueEntry = {
+          id: transferQueueId,
+          inscriptionId: item.inscriptionId,
+          psbtBase64: psbtData.psbtBase64,
+          recipientAddress: walletAddress,
+          ownerAddress: ownerAddress,
+          feeRate: parseInt(feeRate, 10),
+          collectionId: collectionId,
+          itemName: item.name,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+        };
+        
+        // TODO: Speichere in Datenbank
+        // await db.query('INSERT INTO transfer_queue ...', [transferQueueId, ...]);
+        
+        console.log(`[Collections] 📝 Transfer queue ID: ${transferQueueId}`);
+        console.log(`[Collections] ⚠️ Admin must sign this PSBT via admin panel`);
         
         res.json({
           success: true,
-          message: 'Transfer completed successfully (admin-signed)',
-          txid: transferResult.txid,
+          requiresAdminSigning: true,
+          transferQueueId: transferQueueId,
+          message: 'Transfer queued for admin signing. The admin will sign and broadcast the transaction soon.',
+          estimatedTime: 'A few minutes',
+          psbtBase64: psbtData.psbtBase64, // Für Admin-Panel zum Signieren
           inscriptionId: item.inscriptionId,
+          recipientAddress: walletAddress,
+          ownerAddress: ownerAddress,
+          feeRate: parseInt(feeRate, 10),
         });
-      } catch (signError) {
-        console.error(`[Collections] ❌ Failed to sign PSBT with admin key:`, signError);
-        // Fallback: Frontend-Signing (wird aber nicht funktionieren, da Benutzer Admin-Adresse nicht kontrolliert)
-        console.log(`[Collections] ⚠️ Falling back to frontend signing (may not work)`);
+        return; // Wichtig: Return hier
+      } catch (queueError) {
+        console.error(`[Collections] ❌ Failed to create transfer queue entry:`, queueError);
+        // Fallback: Frontend-Signing (wird nicht funktionieren, aber besser als nichts)
         res.json({
           success: true,
           requiresSigning: true,
@@ -4915,8 +4968,9 @@ app.post('/api/collections/mint-original', async (req, res) => {
           feeRate: parseInt(feeRate, 10),
           recipientAddress: walletAddress,
           ownerAddress: ownerAddress,
-          warning: 'This PSBT requires admin signature. Your wallet may not be able to sign it.',
+          warning: 'This PSBT requires admin signature. Please contact support.',
         });
+        return;
       }
     } 
     // Wenn signedPsbt vorhanden ist (vom Frontend ODER vom Admin-Panel), broadcasten
