@@ -4090,9 +4090,10 @@ app.post('/api/point-shop/mint-series', async (req, res) => {
 // ========== COLLECTION ENDPOINTS ==========
 
 // Get all active collections
-app.get('/api/collections', (req, res) => {
+app.get('/api/collections', async (req, res) => {
   try {
-    const collections = collectionService.getAllCollections();
+    const category = req.query.category;
+    const collections = await collectionService.getAllCollections(category);
     res.json({ collections });
   } catch (error) {
     console.error('[Collections] ❌ Error:', error);
@@ -4101,16 +4102,16 @@ app.get('/api/collections', (req, res) => {
 });
 
 // Get single collection
-app.get('/api/collections/:id', (req, res) => {
+app.get('/api/collections/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const collection = collectionService.getCollection(id);
+    const collection = await collectionService.getCollection(id);
     
     if (!collection) {
       return res.status(404).json({ error: 'Collection not found' });
     }
     
-    res.json({ collection });
+    res.json(collection);
   } catch (error) {
     console.error('[Collections] ❌ Error:', error);
     res.status(500).json({ error: error.message || 'Internal server error' });
@@ -4771,7 +4772,7 @@ app.post('/api/collections/mint-original', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const collection = collectionService.getCollection(collectionId);
+    const collection = await collectionService.getCollection(collectionId);
     if (!collection) {
       return res.status(404).json({ error: 'Collection not found' });
     }
@@ -5492,6 +5493,7 @@ async function startServer() {
     
     // Führe Migration aus (JSON -> DB)
     await pointShopService.migrateJSONToDB();
+    await collectionService.migrateCollectionsToDB();
     console.log(`✅ Datenbank bereit\n`);
   } else {
     console.log(`⚠️ Keine Datenbankverbindung - verwende JSON-Fallback\n`);
