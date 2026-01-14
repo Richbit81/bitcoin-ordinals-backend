@@ -4867,8 +4867,10 @@ app.post('/api/collections/mint-original', async (req, res) => {
 
     // WICHTIG: Für Original Items, die von Admin-Adressen gehalten werden:
     // Der Benutzer kann die PSBT nicht signieren, weil er die Admin-Adresse nicht kontrolliert
-    // Daher signiert der Admin die PSBT im Backend (wenn ADMIN_PRIVATE_KEY gesetzt ist)
-    // Oder der Benutzer muss die PSBT signieren (wenn er die ownerAddress kontrolliert)
+    // 
+    // Lösung: Wir geben dem Benutzer die PSBT, aber mit einem Hinweis, dass er sie nicht signieren kann
+    // Der Admin muss die PSBT manuell signieren (z.B. über ein Admin-Panel oder manuell)
+    // ODER: Die Ordinals müssen bereits an die Benutzer-Adresse transferiert werden, bevor sie zum Verkauf angeboten werden
     
     const psbtData = await ordinalTransferService.preparePresignedTransfer(
       item.inscriptionId,
@@ -4879,16 +4881,13 @@ app.post('/api/collections/mint-original', async (req, res) => {
     const ownerAddress = psbtData.ownerAddress;
     const isAdminAddress = ownerAddress && ADMIN_ADDRESSES.some(addr => addr.toLowerCase() === ownerAddress.toLowerCase());
     
-    // Wenn die ownerAddress eine Admin-Adresse ist, signiere die PSBT im Backend
+    // Wenn die ownerAddress eine Admin-Adresse ist UND ADMIN_PRIVATE_KEY gesetzt ist, signiere im Backend
     if (isAdminAddress && process.env.ADMIN_PRIVATE_KEY) {
       console.log(`[Collections] 🔐 Admin address detected - signing PSBT in backend`);
       console.log(`[Collections] Owner address: ${ownerAddress} (admin address)`);
       
       try {
-        // Signiere die PSBT im Backend mit Admin-Private-Key
         const signedPsbt = await ordinalTransferService.signPSBTWithAdmin(psbtData.psbtBase64);
-        
-        // Finalisiere und broadcast die PSBT
         const transferResult = await ordinalTransferService.transferOrdinal(
           item.inscriptionId,
           walletAddress,
@@ -4897,7 +4896,6 @@ app.post('/api/collections/mint-original', async (req, res) => {
         );
         
         console.log(`[Collections] ✅ Original ordinal ${item.inscriptionId} transferred to ${walletAddress} (admin-signed)`);
-        console.log(`[Collections] 📝 Transaction ID: ${transferResult.txid}`);
         
         res.json({
           success: true,
@@ -4907,8 +4905,8 @@ app.post('/api/collections/mint-original', async (req, res) => {
         });
       } catch (signError) {
         console.error(`[Collections] ❌ Failed to sign PSBT with admin key:`, signError);
-        // Fallback: Versuche Frontend-Signing
-        console.log(`[Collections] ⚠️ Falling back to frontend signing`);
+        // Fallback: Frontend-Signing (wird aber nicht funktionieren, da Benutzer Admin-Adresse nicht kontrolliert)
+        console.log(`[Collections] ⚠️ Falling back to frontend signing (may not work)`);
         res.json({
           success: true,
           requiresSigning: true,
@@ -4917,6 +4915,7 @@ app.post('/api/collections/mint-original', async (req, res) => {
           feeRate: parseInt(feeRate, 10),
           recipientAddress: walletAddress,
           ownerAddress: ownerAddress,
+          warning: 'This PSBT requires admin signature. Your wallet may not be able to sign it.',
         });
       }
     } 
