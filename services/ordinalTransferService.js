@@ -383,9 +383,40 @@ export function finalizeSignedPSBT(signedPsbtHex) {
     
     if (needsFinalization) {
       console.log('[OrdinalTransfer] PSBT needs finalization, finalizing all inputs...');
+      
+      // Für Taproot-Inputs: Prüfe ob Signaturen vorhanden sind
+      for (let i = 0; i < psbt.inputCount; i++) {
+        const input = psbt.data.inputs[i];
+        const isTaproot = input.tapInternalKey || input.tapMerkleRoot;
+        
+        if (isTaproot) {
+          console.log(`[OrdinalTransfer] Input ${i} is Taproot`);
+          // Prüfe ob Taproot-Signaturen vorhanden sind
+          const hasTaprootSig = input.tapKeySig || (input.tapScriptSig && input.tapScriptSig.length > 0);
+          if (!hasTaprootSig) {
+            console.error(`[OrdinalTransfer] ❌ Taproot input ${i} has no signature!`);
+            console.error(`[OrdinalTransfer] Input data:`, JSON.stringify({
+              tapKeySig: !!input.tapKeySig,
+              tapScriptSig: input.tapScriptSig?.length || 0,
+              tapInternalKey: !!input.tapInternalKey,
+            }, null, 2));
+            throw new Error(`Taproot input ${i} is not signed. The wallet may not have signed the PSBT correctly.`);
+          }
+        }
+      }
+      
       // Finalize all inputs (extract signatures from PSBT)
-      psbt.finalizeAllInputs();
-      console.log('[OrdinalTransfer] ✅ All inputs finalized');
+      try {
+        psbt.finalizeAllInputs();
+        console.log('[OrdinalTransfer] ✅ All inputs finalized');
+      } catch (finalizeError) {
+        console.error('[OrdinalTransfer] ❌ Finalization error:', finalizeError.message);
+        // Für Taproot: Wenn autoFinalized fehlgeschlagen ist, versuche manuelle Finalisierung
+        if (finalizeError.message.includes('taproot') || finalizeError.message.includes('tapleaf')) {
+          throw new Error(`Failed to finalize Taproot PSBT: ${finalizeError.message}. The PSBT may need to be finalized by the wallet (set autoFinalized: true).`);
+        }
+        throw finalizeError;
+      }
     } else {
       console.log('[OrdinalTransfer] ⚠️ PSBT appears to be already finalized');
     }
