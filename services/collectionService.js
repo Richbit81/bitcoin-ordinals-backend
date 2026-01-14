@@ -57,8 +57,9 @@ export { loadCollections, saveCollections };
  * BOMBENSICHER: Speichert IMMER in PostgreSQL UND JSON (Dual-Write)
  */
 export async function createCollection(data) {
+  // Wenn ID vorhanden, verwende sie (für Restore), sonst erstelle neue
   const newCollection = {
-    id: `collection-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    id: data.id || `collection-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     name: data.name,
     description: data.description || '',
     thumbnail: data.thumbnail || '',
@@ -67,9 +68,9 @@ export async function createCollection(data) {
     category: data.category || 'default',
     page: data.page || null,
     mintType: data.mintType || 'individual',
-    createdAt: new Date().toISOString(),
+    createdAt: data.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    active: true,
+    active: data.active !== false,
   };
   
   let dbSuccess = false;
