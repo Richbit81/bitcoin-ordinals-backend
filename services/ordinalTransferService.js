@@ -432,17 +432,60 @@ export async function broadcastPresignedTx(signedTxHex) {
       throw new Error(`Transaction data too short (${signedTxHex.length} chars). Expected at least 50 characters.`);
     }
     
-    const broadcastUrl = `${UNISAT_API_URL}/v1/indexer/broadcast`;
-    console.log(`[OrdinalTransfer] Broadcasting to: ${broadcastUrl}`);
+    // UniSat API Broadcast-Endpoint (verschiedene mögliche URLs)
+    const broadcastUrls = [
+      `${UNISAT_API_URL}/v1/indexer/broadcast`,
+      `${UNISAT_API_URL}/v1/broadcast`,
+      `https://mempool.space/api/tx`, // Fallback: Blockstream Mempool API
+    ];
     
-    const broadcastResponse = await fetch(broadcastUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${UNISAT_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ rawtx: signedTxHex }),
-    });
+    let broadcastResponse = null;
+    let lastError = null;
+    
+    // Versuche verschiedene Broadcast-Endpoints
+    for (const broadcastUrl of broadcastUrls) {
+      try {
+        console.log(`[OrdinalTransfer] Attempting broadcast to: ${broadcastUrl}`);
+        
+        if (broadcastUrl.includes('mempool.space')) {
+          // Blockstream Mempool API (kein Auth benötigt)
+          broadcastResponse = await fetch(broadcastUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'text/plain',
+            },
+            body: signedTxHex,
+          });
+        } else {
+          // UniSat API (mit Auth)
+          broadcastResponse = await fetch(broadcastUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${UNISAT_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ rawtx: signedTxHex }),
+          });
+        }
+        
+        if (broadcastResponse.ok) {
+          console.log(`[OrdinalTransfer] ✅ Broadcast successful via ${broadcastUrl}`);
+          break;
+        } else {
+          console.warn(`[OrdinalTransfer] ⚠️ Broadcast failed via ${broadcastUrl}: ${broadcastResponse.status} ${broadcastResponse.statusText}`);
+          lastError = `${broadcastResponse.status} ${broadcastResponse.statusText}`;
+          broadcastResponse = null;
+        }
+      } catch (urlError) {
+        console.warn(`[OrdinalTransfer] ⚠️ Error broadcasting via ${broadcastUrl}:`, urlError.message);
+        lastError = urlError.message;
+        broadcastResponse = null;
+      }
+    }
+    
+    if (!broadcastResponse) {
+      throw new Error(`All broadcast endpoints failed. Last error: ${lastError}`);
+    }
 
     console.log(`[OrdinalTransfer] Broadcast response status: ${broadcastResponse.status} ${broadcastResponse.statusText}`);
 
@@ -461,14 +504,39 @@ export async function broadcastPresignedTx(signedTxHex) {
       throw new Error(errorData.message || errorData.msg || `Broadcast failed: ${broadcastResponse.statusText}`);
     }
 
-    const broadcastData = await broadcastResponse.json();
-    console.log(`[OrdinalTransfer] Broadcast response data:`, JSON.stringify(broadcastData, null, 2));
+    // Parse response (kann JSON oder Text sein)
+    let broadcastData;
+    let txid;
     
-    const txid = broadcastData.result || broadcastData.data || broadcastData.txid;
+    try {
+      const responseText = await broadcastResponse.text();
+      console.log(`[OrdinalTransfer] Broadcast response text:`, responseText.substring(0, 200));
+      
+      try {
+        broadcastData = JSON.parse(responseText);
+        console.log(`[OrdinalTransfer] Broadcast response data:`, JSON.stringify(broadcastData, null, 2));
+        txid = broadcastData.result || broadcastData.data || broadcastData.txid || broadcastData;
+      } catch (jsonError) {
+        // Response ist kein JSON - könnte direkt die TXID sein
+        console.log(`[OrdinalTransfer] Response is not JSON, treating as TXID`);
+        txid = responseText.trim();
+        broadcastData = { txid: txid };
+      }
+    } catch (parseError) {
+      console.error(`[OrdinalTransfer] ❌ Error parsing broadcast response:`, parseError);
+      throw new Error(`Failed to parse broadcast response: ${parseError.message}`);
+    }
     
-    if (!txid) {
-      console.error(`[OrdinalTransfer] ❌ No transaction ID in response. Full response:`, JSON.stringify(broadcastData, null, 2));
-      throw new Error('Broadcast successful but no transaction ID returned.');
+    // Falls keine TXID gefunden, versuche sie aus der Transaction zu extrahieren
+    if (!txid || txid.length < 20) {
+      try {
+        const tx = bitcoin.Transaction.fromHex(signedTxHex);
+        txid = tx.getId();
+        console.log(`[OrdinalTransfer] Extracted TXID from transaction: ${txid}`);
+      } catch (txError) {
+        console.error(`[OrdinalTransfer] ❌ Could not extract TXID. Response:`, broadcastData);
+        throw new Error('Broadcast successful but no transaction ID returned or extractable.');
+      }
     }
 
     console.log(`[OrdinalTransfer] ✅ Pre-signed transaction broadcasted: ${txid}`);
