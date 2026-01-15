@@ -291,7 +291,12 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
       witnessUtxo: witnessUtxo,
     };
 
-    // CRITICAL: DO NOT set tapInternalKey here!`n    // The tapInternalKey must be set by the signer (admin key) in signPSBTWithAdmin`n    // Setting it here with the wrong key (from scriptPk) causes signing to fail`n    console.log(`[OrdinalTransfer] Adding input to PSBT (Taproot: ${isTaproot ? 'YES (tapInternalKey will be set by signer)' : 'NO'})`);`n    `n    psbt.addInput(inputData);
+    // CRITICAL: DO NOT set tapInternalKey here!
+    // The tapInternalKey must be set by the signer (admin key) in signPSBTWithAdmin
+    // Setting it here with the wrong key (from scriptPk) causes signing to fail
+    console.log([OrdinalTransfer] Adding input to PSBT (Taproot: ${isTaproot ? 'YES (tapInternalKey will be set by signer)' : 'NO'}));
+    
+    psbt.addInput(inputData);
 
     const estimatedVSize = 200;
     const fee = estimatedVSize * feeRate;
