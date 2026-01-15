@@ -291,17 +291,7 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
       witnessUtxo: witnessUtxo,
     };
 
-    // Add tapInternalKey if we extracted it (for Taproot UTXOs)
-    // Note: This is the taproot_output_key, not the actual tapInternalKey
-    // The wallet should be able to use this to derive or validate the tapInternalKey
-    if (tapInternalKey) {
-      inputData.tapInternalKey = tapInternalKey;
-      console.log(`[OrdinalTransfer] ✅ Added tapInternalKey to PSBT input (Taproot: YES)`);
-    } else {
-      console.log(`[OrdinalTransfer] Adding input to PSBT (Taproot: ${isTaproot ? 'YES (no tapInternalKey)' : 'NO'})`);
-    }
-    
-    psbt.addInput(inputData);
+    // CRITICAL: DO NOT set tapInternalKey here!`n    // The tapInternalKey must be set by the signer (admin key) in signPSBTWithAdmin`n    // Setting it here with the wrong key (from scriptPk) causes signing to fail`n    console.log(`[OrdinalTransfer] Adding input to PSBT (Taproot: ${isTaproot ? 'YES (tapInternalKey will be set by signer)' : 'NO'})`);`n    `n    psbt.addInput(inputData);
 
     const estimatedVSize = 200;
     const fee = estimatedVSize * feeRate;
