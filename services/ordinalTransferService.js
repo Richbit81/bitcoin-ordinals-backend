@@ -294,7 +294,7 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
     // CRITICAL: DO NOT set tapInternalKey here!
     // The tapInternalKey must be set by the signer (admin key) in signPSBTWithAdmin
     // Setting it here with the wrong key (from scriptPk) causes signing to fail
-    console.log([OrdinalTransfer] Adding input to PSBT (Taproot: ${isTaproot ? 'YES (tapInternalKey will be set by signer)' : 'NO'}));
+    console.log(`[OrdinalTransfer] Adding input to PSBT (Taproot: ${isTaproot ? 'YES (tapInternalKey will be set by signer)' : 'NO'})`);
     
     psbt.addInput(inputData);
 
