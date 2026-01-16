@@ -1,4 +1,4 @@
-import * as bitcoin from 'bitcoinjs-lib';
+﻿import * as bitcoin from 'bitcoinjs-lib';
 import { ECPairFactory } from 'ecpair';
 import ecc from '@bitcoinerlab/secp256k1';
 import dotenv from 'dotenv';
@@ -55,7 +55,7 @@ function getAdminKeyPair() {
 export async function createTransferPSBT(inscriptionId, recipientAddress, feeRate = 5) {
   try {
     console.log(`[OrdinalTransfer] Creating UNSIGNED PSBT for inscription ${inscriptionId} to ${recipientAddress} at ${feeRate} sat/vB`);
-    console.log(`[OrdinalTransfer] ⚠️  This PSBT will be signed by the wallet - NO PRIVATE KEY NEEDED!`);
+    console.log(`[OrdinalTransfer] âš ï¸  This PSBT will be signed by the wallet - NO PRIVATE KEY NEEDED!`);
     
     if (!UNISAT_API_KEY) {
       throw new Error('UNISAT_API_KEY is not set in environment variables');
@@ -75,7 +75,7 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
 
     if (!utxoResponse.ok) {
       const errorText = await utxoResponse.text().catch(() => 'Unknown error');
-      console.error(`[OrdinalTransfer] ❌ Failed to fetch inscription info: ${utxoResponse.status} ${utxoResponse.statusText}`, errorText);
+      console.error(`[OrdinalTransfer] âŒ Failed to fetch inscription info: ${utxoResponse.status} ${utxoResponse.statusText}`, errorText);
       throw new Error(`Failed to fetch inscription info: ${utxoResponse.status} ${utxoResponse.statusText}`);
     }
 
@@ -89,7 +89,7 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
     const data = inscriptionData.data || inscriptionData.result || inscriptionData;
     
     if (!data) {
-      console.error(`[OrdinalTransfer] ❌ No data in API response. Full response:`, JSON.stringify(inscriptionData, null, 2));
+      console.error(`[OrdinalTransfer] âŒ No data in API response. Full response:`, JSON.stringify(inscriptionData, null, 2));
       throw new Error('No data returned from UniSat API');
     }
     
@@ -109,7 +109,7 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
       vout = utxoObject.vout !== undefined ? utxoObject.vout : (utxoObject.vOut !== undefined ? utxoObject.vOut : null);
       utxoValue = utxoObject.satoshi || utxoObject.value || data.outSatoshi || 546;
       scriptPk = utxoObject.scriptPk || utxoObject.scriptpk || utxoObject.script || null;
-      console.log(`[OrdinalTransfer] ✅ Found UTXO object: txid=${txid}, vout=${vout}, value=${utxoValue}, scriptPk=${scriptPk ? scriptPk.substring(0, 20) + '...' : 'NOT FOUND'}`);
+      console.log(`[OrdinalTransfer] âœ… Found UTXO object: txid=${txid}, vout=${vout}, value=${utxoValue}, scriptPk=${scriptPk ? scriptPk.substring(0, 20) + '...' : 'NOT FOUND'}`);
     }
     // Try direct fields on data
     else if (data.txid || data.txId) {
@@ -128,7 +128,7 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
     }
     
     if (!txid || vout === null || vout === undefined) {
-      console.error(`[OrdinalTransfer] ❌ Could not extract txid and vout.`);
+      console.error(`[OrdinalTransfer] âŒ Could not extract txid and vout.`);
       console.error(`[OrdinalTransfer] Available data fields:`, Object.keys(data).join(', '));
       if (data.utxo) {
         console.error(`[OrdinalTransfer] utxo type:`, typeof data.utxo, Array.isArray(data.utxo) ? '(array)' : '(object)');
@@ -174,16 +174,16 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
           }
         }
       } catch (txError) {
-        console.warn(`[OrdinalTransfer] ⚠️ Failed to fetch transaction details: ${txError.message}`);
+        console.warn(`[OrdinalTransfer] âš ï¸ Failed to fetch transaction details: ${txError.message}`);
       }
     }
     
     // If we still don't have scriptPk, derive it from the recipient address
     if (!scriptPk) {
-      console.warn(`[OrdinalTransfer] ⚠️ ScriptPk not found. Deriving from recipient address...`);
+      console.warn(`[OrdinalTransfer] âš ï¸ ScriptPk not found. Deriving from recipient address...`);
       try {
         scriptPk = bitcoin.address.toOutputScript(recipientAddress, NETWORK).toString('hex');
-        console.log(`[OrdinalTransfer] ✅ Derived scriptPk from recipient address: ${scriptPk.substring(0, 20)}...`);
+        console.log(`[OrdinalTransfer] âœ… Derived scriptPk from recipient address: ${scriptPk.substring(0, 20)}...`);
       } catch (deriveError) {
         throw new Error(`Cannot create PSBT: ScriptPk not found and cannot be derived. Error: ${deriveError.message}`);
       }
@@ -197,7 +197,7 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
     if (ownerAddress) {
       console.log(`[OrdinalTransfer] Owner address: ${ownerAddress} (this address will sign the PSBT in the frontend)`);
     } else {
-      console.warn(`[OrdinalTransfer] ⚠️ Owner address not found in UTXO data.`);
+      console.warn(`[OrdinalTransfer] âš ï¸ Owner address not found in UTXO data.`);
     }
 
     // Create UNSIGNED PSBT for pre-signing (NO PRIVATE KEY NEEDED!)
@@ -251,7 +251,7 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
     });
 
     // Debug: Final verification before addInput
-    console.log(`[OrdinalTransfer] 🔍 Final verification before addInput:`);
+    console.log(`[OrdinalTransfer] ðŸ” Final verification before addInput:`);
     console.log(`  - scriptBytes type: ${scriptBytes.constructor.name}`);
     console.log(`  - scriptBytes is Buffer: ${Buffer.isBuffer(scriptBytes)}`);
     console.log(`  - value type: ${typeof witnessUtxo.value}`);
@@ -276,11 +276,11 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
         if (taprootOutputKey.length === 32) {
           // Convert to Buffer for tapInternalKey (bitcoinjs-lib expects Buffer)
           tapInternalKey = Buffer.from(taprootOutputKey);
-          console.log(`[OrdinalTransfer] 🔍 Taproot detected: Extracted taproot_output_key from scriptPubKey`);
+          console.log(`[OrdinalTransfer] ðŸ” Taproot detected: Extracted taproot_output_key from scriptPubKey`);
           console.log(`[OrdinalTransfer] taproot_output_key (hex): ${tapInternalKey.toString('hex').substring(0, 20)}...`);
         }
       } catch (extractError) {
-        console.warn(`[OrdinalTransfer] ⚠️  Failed to extract taproot_output_key: ${extractError.message}`);
+        console.warn(`[OrdinalTransfer] âš ï¸  Failed to extract taproot_output_key: ${extractError.message}`);
       }
     }
 
@@ -315,9 +315,9 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
     
     console.log(`[OrdinalTransfer] Output: ${utxoValueBigInt.toString()} sats to ${recipientAddress}`);
     
-    // Debug: Prüfe PSBT-Struktur
+    // Debug: PrÃ¼fe PSBT-Struktur
     const outputCount = psbt.txOutputs ? psbt.txOutputs.length : (psbt.outputCount || 'unknown');
-    console.log(`[OrdinalTransfer] ✅ UNSIGNED PSBT created: ${psbt.inputCount} input(s), ${outputCount} output(s)`);
+    console.log(`[OrdinalTransfer] âœ… UNSIGNED PSBT created: ${psbt.inputCount} input(s), ${outputCount} output(s)`);
     
     // Debug: Validiere PSBT-Struktur
     try {
@@ -325,11 +325,11 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
       console.log(`[OrdinalTransfer] PSBT Base64 length: ${psbtBase64Test.length} chars`);
       console.log(`[OrdinalTransfer] PSBT Base64 preview: ${psbtBase64Test.substring(0, 50)}...`);
     } catch (validationError) {
-      console.error(`[OrdinalTransfer] ⚠️ PSBT validation error:`, validationError);
+      console.error(`[OrdinalTransfer] âš ï¸ PSBT validation error:`, validationError);
       throw new Error(`PSBT validation failed: ${validationError.message}`);
     }
     
-    console.log(`[OrdinalTransfer] ℹ️  This PSBT will be signed by the wallet in the frontend - NO PRIVATE KEY NEEDED IN BACKEND!`);
+    console.log(`[OrdinalTransfer] â„¹ï¸  This PSBT will be signed by the wallet in the frontend - NO PRIVATE KEY NEEDED IN BACKEND!`);
     
     // Return both PSBT and ownerAddress for preparePresignedTransfer
     return {
@@ -348,36 +348,179 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
  * @param {string} psbtBase64 - Die PSBT als Base64-String
  * @returns {Promise<string>} - Die signierte PSBT als Base64-String
  */
-export async function signPSBTWithAdmin(psbtBase64) {
+export function signPSBTWithAdmin(psbtBase64, expectedOwnerAddress = null) {
   try {
-    console.log('[OrdinalTransfer] Signing PSBT with admin private key...');
+    // Trim whitespace from admin key
+    const adminKey = ADMIN_PRIVATE_KEY ? ADMIN_PRIVATE_KEY.trim() : null;
     
-    if (!ADMIN_PRIVATE_KEY) {
+    if (!adminKey) {
       throw new Error('ADMIN_PRIVATE_KEY not set - cannot sign PSBT');
     }
     
-    const adminKeyPair = getAdminKeyPair();
-    const psbt = bitcoin.Psbt.fromBase64(psbtBase64, { network: NETWORK });
+    console.log(`[OrdinalTransfer] ðŸ” Signing PSBT with admin key...`);
+    console.log(`[OrdinalTransfer] ðŸ”„ RECREATING PSBT with correct tapInternalKey from scratch...`);
     
-    console.log(`[OrdinalTransfer] PSBT has ${psbt.inputCount} input(s)`);
+    // Import admin key
+    let keyPair;
+    try {
+      if (adminKey.length === 52 || adminKey.length === 51) {
+        keyPair = ECPair.fromWIF(adminKey, NETWORK);
+        console.log(`[OrdinalTransfer] âœ… Admin key imported from WIF`);
+      } else {
+        const privateKeyBuffer = Buffer.from(adminKey, 'hex');
+        keyPair = ECPair.fromPrivateKey(privateKeyBuffer, { network: NETWORK });
+        console.log(`[OrdinalTransfer] âœ… Admin key imported from HEX`);
+      }
+    } catch (keyError) {
+      throw new Error(`Failed to import admin key: ${keyError.message}`);
+    }
+    
+    // Calculate our tapInternalKey (x-only pubkey for Taproot)
+    const ourTapInternalKey = keyPair.publicKey.slice(1, 33); // Remove 0x02/0x03 prefix
+    const ourTapInternalKeyHex = Buffer.from(ourTapInternalKey).toString('hex');
+    console.log(`[OrdinalTransfer] âœ… Calculated tapInternalKey: ${ourTapInternalKeyHex}`);
+    
+    // Parse OLD PSBT to extract data
+    let oldPsbt;
+    try {
+      oldPsbt = bitcoin.Psbt.fromBase64(psbtBase64, { network: NETWORK });
+    } catch (base64Error) {
+      try {
+        oldPsbt = bitcoin.Psbt.fromHex(psbtBase64, { network: NETWORK });
+      } catch (hexError) {
+        throw new Error(`Failed to parse PSBT: ${base64Error.message} / ${hexError.message}`);
+      }
+    }
+    
+    console.log(`[OrdinalTransfer] Old PSBT has ${oldPsbt.inputCount} input(s) and ${oldPsbt.outputCount} output(s)`);
+    
+    // Extract input data from old PSBT
+    if (oldPsbt.inputCount === 0) {
+      throw new Error('Old PSBT has no inputs');
+    }
+    
+    const input = oldPsbt.data.inputs[0];
+    if (!input.witnessUtxo) {
+      throw new Error('Input has no witnessUtxo');
+    }
+    
+    const txid = oldPsbt.txInputs[0].hash.reverse().toString('hex');
+    const vout = oldPsbt.txInputs[0].index;
+    const value = input.witnessUtxo.value;
+    const scriptPubKey = input.witnessUtxo.script;
+    
+    console.log(`[OrdinalTransfer] Extracted input data: txid=${txid}, vout=${vout}, value=${value.toString()}`);
+    
+    // Extract output data from old PSBT
+    if (oldPsbt.outputCount === 0) {
+      throw new Error('Old PSBT has no outputs');
+    }
+    
+    const output = oldPsbt.txOutputs[0];
+    const recipientAddress = bitcoin.address.fromOutputScript(output.script, NETWORK);
+    const outputValue = output.value;
+    
+    console.log(`[OrdinalTransfer] Extracted output data: address=${recipientAddress}, value=${outputValue.toString()}`);
+    
+    // Check if it's Taproot
+    const isTaproot = scriptPubKey[0] === 0x51 && scriptPubKey.length === 34;
+    console.log(`[OrdinalTransfer] Input is Taproot: ${isTaproot}`);
+    
+    // CREATE NEW PSBT with correct tapInternalKey from the start
+    const psbt = new bitcoin.Psbt({ network: NETWORK });
+    
+    // Prepare input data
+    const inputData = {
+      hash: txid,
+      index: parseInt(vout),
+      witnessUtxo: {
+        script: scriptPubKey,
+        value: value,
+      },
+    };
+    
+    // CRITICAL: Set tapInternalKey DIRECTLY if it's Taproot
+    if (isTaproot) {
+      inputData.tapInternalKey = ourTapInternalKey;
+      console.log(`[OrdinalTransfer] âœ… Setting tapInternalKey directly in inputData: ${ourTapInternalKeyHex}`);
+    }
+    
+    psbt.addInput(inputData);
+    console.log(`[OrdinalTransfer] âœ… Added input to NEW PSBT with ${isTaproot ? 'tapInternalKey set' : 'no tapInternalKey'}`);
+    
+    // Add output
+    psbt.addOutput({
+      address: recipientAddress,
+      value: outputValue,
+    });
+    console.log(`[OrdinalTransfer] âœ… Added output to NEW PSBT`);
+    
+    // Verify tapInternalKey is set (if Taproot)
+    if (isTaproot) {
+      const newPsbtInput = psbt.data.inputs[0];
+      if (newPsbtInput.tapInternalKey) {
+        console.log(`[OrdinalTransfer] âœ… Verified: tapInternalKey is set in NEW PSBT: ${Buffer.from(newPsbtInput.tapInternalKey).toString('hex')}`);
+      } else {
+        console.error(`[OrdinalTransfer] âŒ ERROR: tapInternalKey NOT set in NEW PSBT despite being Taproot!`);
+      }
+    }
+    
+    // Berechne Adressen fÃ¼r diesen Key (for verification)
+    const p2pkhAddress = bitcoin.payments.p2pkh({ pubkey: keyPair.publicKey, network: NETWORK }).address;
+    const p2wpkhAddress = bitcoin.payments.p2wpkh({ pubkey: keyPair.publicKey, network: NETWORK }).address;
+    const p2trAddress = bitcoin.payments.p2tr({
+      internalPubkey: ourTapInternalKey,
+      network: NETWORK,
+    }).address;
+    
+    // Zeige Public Key fÃ¼r Debugging
+    const publicKeyHex = Buffer.from(keyPair.publicKey).toString('hex');
+    
+    console.log(`[OrdinalTransfer] ========== KEY VERIFICATION ==========`);
+    console.log(`[OrdinalTransfer]   - Private Key (WIF, first 10 chars): ${adminKey.substring(0, 10)}...`);
+    console.log(`[OrdinalTransfer]   - Private Key (WIF, last 10 chars): ...${adminKey.substring(adminKey.length - 10)}`);
+    console.log(`[OrdinalTransfer]   - Public Key (hex, FULL): ${publicKeyHex}`);
+    console.log(`[OrdinalTransfer]   - P2TR address: ${p2trAddress}`);
+    console.log(`[OrdinalTransfer]   - Our tapInternalKey (hex): ${ourTapInternalKeyHex}`);
+    console.log(`[OrdinalTransfer] ======================================`);
+    
+    if (expectedOwnerAddress) {
+      const matches = expectedOwnerAddress.toLowerCase() === p2pkhAddress.toLowerCase() ||
+                     expectedOwnerAddress.toLowerCase() === p2wpkhAddress.toLowerCase() ||
+                     expectedOwnerAddress.toLowerCase() === p2trAddress.toLowerCase();
+      if (!matches) {
+        console.warn(`[OrdinalTransfer] âš ï¸ WARNING: Expected owner address ${expectedOwnerAddress} does not match any address derived from admin key:`);
+        console.warn(`[OrdinalTransfer]   - P2PKH: ${p2pkhAddress}`);
+        console.warn(`[OrdinalTransfer]   - P2WPKH: ${p2wpkhAddress}`);
+        console.warn(`[OrdinalTransfer]   - P2TR: ${p2trAddress}`);
+      } else {
+        console.log(`[OrdinalTransfer] âœ… Expected owner address matches admin key address`);
+      }
+    }
     
     // Signiere alle Inputs mit Admin-KeyPair
     for (let i = 0; i < psbt.inputCount; i++) {
       try {
-        psbt.signInput(i, adminKeyPair);
-        console.log(`[OrdinalTransfer] ✅ Input ${i} signed with admin key`);
+        const inputType = psbt.data.inputs[i].witnessUtxo ? 
+          (psbt.data.inputs[i].witnessUtxo.script[0] === 0x51 ? 'Taproot' : 'Segwit') : 
+          'Legacy';
+        console.log(`[OrdinalTransfer] Signing input ${i} (type: ${inputType})...`);
+        
+        psbt.signInput(i, keyPair);
+        console.log(`[OrdinalTransfer] âœ… Signed input ${i}`);
       } catch (signError) {
-        console.error(`[OrdinalTransfer] ❌ Failed to sign input ${i}:`, signError.message);
+        console.error(`[OrdinalTransfer] âŒ Failed to sign input ${i}:`, signError.message);
+        console.error(`[OrdinalTransfer] Error details:`, signError);
         throw new Error(`Failed to sign input ${i}: ${signError.message}`);
       }
     }
     
     const signedPsbtBase64 = psbt.toBase64();
-    console.log('[OrdinalTransfer] ✅ PSBT signed with admin key');
+    console.log(`[OrdinalTransfer] âœ… PSBT signed with admin key`);
     
     return signedPsbtBase64;
   } catch (error) {
-    console.error('[OrdinalTransfer] Error signing PSBT with admin:', error);
+    console.error('[OrdinalTransfer] âŒ Error signing PSBT with admin key:', error);
     throw error;
   }
 }
@@ -400,11 +543,11 @@ export async function preparePresignedTransfer(inscriptionId, recipientAddress, 
     const ownerAddress = result.ownerAddress || null;
     
     const psbtBase64 = psbt.toBase64();
-    console.log(`[OrdinalTransfer] ✅ Unsigned PSBT created for ${inscriptionId} (ready for wallet signing)`);
+    console.log(`[OrdinalTransfer] âœ… Unsigned PSBT created for ${inscriptionId} (ready for wallet signing)`);
     if (ownerAddress) {
       console.log(`[OrdinalTransfer] Owner address (input address): ${ownerAddress}`);
     } else {
-      console.warn(`[OrdinalTransfer] ⚠️ Owner address not found`);
+      console.warn(`[OrdinalTransfer] âš ï¸ Owner address not found`);
     }
     
     return { 
@@ -436,15 +579,15 @@ export function finalizeSignedPSBT(signedPsbtHex) {
     try {
       console.log('[OrdinalTransfer] Attempting to parse as Base64...');
       psbt = bitcoin.Psbt.fromBase64(signedPsbtHex, { network: NETWORK });
-      console.log('[OrdinalTransfer] ✅ Successfully parsed as Base64 PSBT');
+      console.log('[OrdinalTransfer] âœ… Successfully parsed as Base64 PSBT');
     } catch (base64Error) {
       console.log(`[OrdinalTransfer] Base64 parsing failed: ${base64Error.message}, trying hex...`);
       // If base64 fails, try hex
       try {
         psbt = bitcoin.Psbt.fromHex(signedPsbtHex, { network: NETWORK });
-        console.log('[OrdinalTransfer] ✅ Successfully parsed as Hex PSBT');
+        console.log('[OrdinalTransfer] âœ… Successfully parsed as Hex PSBT');
       } catch (hexError) {
-        console.error(`[OrdinalTransfer] ❌ Both Base64 and Hex parsing failed:`);
+        console.error(`[OrdinalTransfer] âŒ Both Base64 and Hex parsing failed:`);
         console.error(`  Base64 error: ${base64Error.message}`);
         console.error(`  Hex error: ${hexError.message}`);
         throw new Error(`Failed to parse PSBT as base64 or hex: ${base64Error.message} / ${hexError.message}`);
@@ -486,54 +629,54 @@ export function finalizeSignedPSBT(signedPsbtHex) {
         if (isTaproot) {
           console.log(`[OrdinalTransfer] Input ${i} is Taproot`);
           
-          // Prüfe verschiedene Signatur-Formate
+          // PrÃ¼fe verschiedene Signatur-Formate
           const hasTapKeySig = !!input.tapKeySig;
           const hasTapScriptSig = input.tapScriptSig && input.tapScriptSig.length > 0;
           const hasFinalScriptWitness = !!input.finalScriptWitness;
           
           if (!hasTapKeySig && !hasTapScriptSig && !hasFinalScriptWitness) {
-            console.warn(`[OrdinalTransfer] ⚠️ Taproot input ${i} appears to have no signature, but attempting finalization anyway`);
+            console.warn(`[OrdinalTransfer] âš ï¸ Taproot input ${i} appears to have no signature, but attempting finalization anyway`);
             console.warn(`[OrdinalTransfer] Xverse may have signed in a way that's not immediately visible`);
           } else {
-            console.log(`[OrdinalTransfer] ✅ Taproot input ${i} has signature indicators (tapKeySig: ${hasTapKeySig}, tapScriptSig: ${hasTapScriptSig}, finalScriptWitness: ${hasFinalScriptWitness})`);
+            console.log(`[OrdinalTransfer] âœ… Taproot input ${i} has signature indicators (tapKeySig: ${hasTapKeySig}, tapScriptSig: ${hasTapScriptSig}, finalScriptWitness: ${hasFinalScriptWitness})`);
           }
         }
       }
       
       // Finalize all inputs (extract signatures from PSBT)
       try {
-        // Für Taproot: bitcoinjs-lib sollte automatisch die richtige Finalisierungsmethode wählen
+        // FÃ¼r Taproot: bitcoinjs-lib sollte automatisch die richtige Finalisierungsmethode wÃ¤hlen
         psbt.finalizeAllInputs();
-        console.log('[OrdinalTransfer] ✅ All inputs finalized');
+        console.log('[OrdinalTransfer] âœ… All inputs finalized');
       } catch (finalizeError) {
-        console.error('[OrdinalTransfer] ❌ Error finalizing all inputs:', finalizeError);
+        console.error('[OrdinalTransfer] âŒ Error finalizing all inputs:', finalizeError);
         console.error('[OrdinalTransfer] Error details:', {
           message: finalizeError.message,
           stack: finalizeError.stack,
         });
         
-        // Versuche manuelle Finalisierung für jeden Input einzeln
+        // Versuche manuelle Finalisierung fÃ¼r jeden Input einzeln
         console.log('[OrdinalTransfer] Attempting manual finalization per input...');
         try {
           for (let i = 0; i < psbt.inputCount; i++) {
             try {
               psbt.finalizeInput(i);
-              console.log(`[OrdinalTransfer] ✅ Input ${i} finalized manually`);
+              console.log(`[OrdinalTransfer] âœ… Input ${i} finalized manually`);
             } catch (inputError) {
-              console.error(`[OrdinalTransfer] ❌ Failed to finalize input ${i}:`, inputError.message);
-              // Wenn es der letzte Input ist und fehlschlägt, werfe den Fehler
+              console.error(`[OrdinalTransfer] âŒ Failed to finalize input ${i}:`, inputError.message);
+              // Wenn es der letzte Input ist und fehlschlÃ¤gt, werfe den Fehler
               if (i === psbt.inputCount - 1) {
                 throw inputError;
               }
             }
           }
-          console.log('[OrdinalTransfer] ✅ Manual finalization completed');
+          console.log('[OrdinalTransfer] âœ… Manual finalization completed');
         } catch (manualError) {
           throw new Error(`Failed to finalize PSBT: ${finalizeError.message}. Manual finalization also failed: ${manualError.message}`);
         }
       }
     } else {
-      console.log('[OrdinalTransfer] ⚠️ PSBT appears to be already finalized');
+      console.log('[OrdinalTransfer] âš ï¸ PSBT appears to be already finalized');
     }
     
     // Extract transaction
@@ -542,13 +685,13 @@ export function finalizeSignedPSBT(signedPsbtHex) {
     const txHex = tx.toHex();
     const txId = tx.getId();
     
-    console.log(`[OrdinalTransfer] ✅ PSBT finalized, extracted transaction: ${txId}`);
+    console.log(`[OrdinalTransfer] âœ… PSBT finalized, extracted transaction: ${txId}`);
     console.log(`[OrdinalTransfer] Transaction hex length: ${txHex.length}`);
     console.log(`[OrdinalTransfer] Transaction has ${tx.ins.length} input(s) and ${tx.outs.length} output(s)`);
     
     return txHex;
   } catch (error) {
-    console.error('[OrdinalTransfer] ❌ Error finalizing signed PSBT:', error);
+    console.error('[OrdinalTransfer] âŒ Error finalizing signed PSBT:', error);
     console.error('[OrdinalTransfer] Error stack:', error.stack);
     throw error;
   }
@@ -566,19 +709,19 @@ export async function broadcastPresignedTx(signedTxHex) {
     console.log(`[OrdinalTransfer] Input preview: ${signedTxHex.substring(0, 100)}...`);
     
     // WICHTIG: signedTxHex kann Base64 PSBT oder Hex Transaction sein
-    // Die Validierung sollte nicht zu strikt sein, da wir Base64 PSBTs akzeptieren müssen
-    // Die Finalisierung wird später prüfen, ob es eine gültige PSBT ist
+    // Die Validierung sollte nicht zu strikt sein, da wir Base64 PSBTs akzeptieren mÃ¼ssen
+    // Die Finalisierung wird spÃ¤ter prÃ¼fen, ob es eine gÃ¼ltige PSBT ist
     
     if (typeof signedTxHex !== 'string' || signedTxHex.length === 0) {
       throw new Error(`Invalid transaction format. Expected non-empty string, got: ${typeof signedTxHex}`);
     }
     
-    // Wenn es sehr kurz ist, ist es wahrscheinlich ungültig
+    // Wenn es sehr kurz ist, ist es wahrscheinlich ungÃ¼ltig
     if (signedTxHex.length < 50) {
       throw new Error(`Transaction data too short (${signedTxHex.length} chars). Expected at least 50 characters.`);
     }
     
-    // UniSat API Broadcast-Endpoint (verschiedene mögliche URLs)
+    // UniSat API Broadcast-Endpoint (verschiedene mÃ¶gliche URLs)
     const broadcastUrls = [
       `${UNISAT_API_URL}/v1/indexer/broadcast`,
       `${UNISAT_API_URL}/v1/broadcast`,
@@ -594,7 +737,7 @@ export async function broadcastPresignedTx(signedTxHex) {
         console.log(`[OrdinalTransfer] Attempting broadcast to: ${broadcastUrl}`);
         
         if (broadcastUrl.includes('mempool.space')) {
-          // Blockstream Mempool API (kein Auth benötigt)
+          // Blockstream Mempool API (kein Auth benÃ¶tigt)
           // Erwartet raw transaction hex als plain text
           console.log(`[OrdinalTransfer] Broadcasting to Blockstream Mempool (raw hex, length: ${signedTxHex.length})`);
           broadcastResponse = await fetch(broadcastUrl, {
@@ -619,15 +762,15 @@ export async function broadcastPresignedTx(signedTxHex) {
         }
         
         if (broadcastResponse.ok) {
-          console.log(`[OrdinalTransfer] ✅ Broadcast successful via ${broadcastUrl}`);
+          console.log(`[OrdinalTransfer] âœ… Broadcast successful via ${broadcastUrl}`);
           break;
         } else {
-          console.warn(`[OrdinalTransfer] ⚠️ Broadcast failed via ${broadcastUrl}: ${broadcastResponse.status} ${broadcastResponse.statusText}`);
+          console.warn(`[OrdinalTransfer] âš ï¸ Broadcast failed via ${broadcastUrl}: ${broadcastResponse.status} ${broadcastResponse.statusText}`);
           lastError = `${broadcastResponse.status} ${broadcastResponse.statusText}`;
           broadcastResponse = null;
         }
       } catch (urlError) {
-        console.warn(`[OrdinalTransfer] ⚠️ Error broadcasting via ${broadcastUrl}:`, urlError.message);
+        console.warn(`[OrdinalTransfer] âš ï¸ Error broadcasting via ${broadcastUrl}:`, urlError.message);
         lastError = urlError.message;
         broadcastResponse = null;
       }
@@ -648,7 +791,7 @@ export async function broadcastPresignedTx(signedTxHex) {
         errorData = { message: errorText };
       }
       
-      console.error(`[OrdinalTransfer] ❌ Broadcast failed: ${broadcastResponse.status} ${broadcastResponse.statusText}`);
+      console.error(`[OrdinalTransfer] âŒ Broadcast failed: ${broadcastResponse.status} ${broadcastResponse.statusText}`);
       console.error(`[OrdinalTransfer] Error response:`, errorData);
       
       throw new Error(errorData.message || errorData.msg || `Broadcast failed: ${broadcastResponse.statusText}`);
@@ -667,13 +810,13 @@ export async function broadcastPresignedTx(signedTxHex) {
         console.log(`[OrdinalTransfer] Broadcast response data:`, JSON.stringify(broadcastData, null, 2));
         txid = broadcastData.result || broadcastData.data || broadcastData.txid || broadcastData;
       } catch (jsonError) {
-        // Response ist kein JSON - könnte direkt die TXID sein
+        // Response ist kein JSON - kÃ¶nnte direkt die TXID sein
         console.log(`[OrdinalTransfer] Response is not JSON, treating as TXID`);
         txid = responseText.trim();
         broadcastData = { txid: txid };
       }
     } catch (parseError) {
-      console.error(`[OrdinalTransfer] ❌ Error parsing broadcast response:`, parseError);
+      console.error(`[OrdinalTransfer] âŒ Error parsing broadcast response:`, parseError);
       throw new Error(`Failed to parse broadcast response: ${parseError.message}`);
     }
     
@@ -684,15 +827,15 @@ export async function broadcastPresignedTx(signedTxHex) {
         txid = tx.getId();
         console.log(`[OrdinalTransfer] Extracted TXID from transaction: ${txid}`);
       } catch (txError) {
-        console.error(`[OrdinalTransfer] ❌ Could not extract TXID. Response:`, broadcastData);
+        console.error(`[OrdinalTransfer] âŒ Could not extract TXID. Response:`, broadcastData);
         throw new Error('Broadcast successful but no transaction ID returned or extractable.');
       }
     }
 
-    console.log(`[OrdinalTransfer] ✅ Pre-signed transaction broadcasted: ${txid}`);
+    console.log(`[OrdinalTransfer] âœ… Pre-signed transaction broadcasted: ${txid}`);
     return { txid, broadcastData };
   } catch (error) {
-    console.error('[OrdinalTransfer] ❌ Error broadcasting pre-signed transaction:', error);
+    console.error('[OrdinalTransfer] âŒ Error broadcasting pre-signed transaction:', error);
     console.error('[OrdinalTransfer] Error stack:', error.stack);
     throw error;
   }
@@ -718,12 +861,12 @@ export async function transferOrdinal(inscriptionId, recipientAddress, feeRate =
     console.log(`[OrdinalTransfer] Processing pre-signed transaction for ${inscriptionId}`);
     console.log(`[OrdinalTransfer] Input length: ${presignedTxHex.length} chars`);
     
-    // Prüfe ob es eine PSBT (base64/hex) oder bereits eine finalisierte Transaction (hex) ist
+    // PrÃ¼fe ob es eine PSBT (base64/hex) oder bereits eine finalisierte Transaction (hex) ist
     let finalTxHex = presignedTxHex;
     
     // Versuche, es als PSBT zu parsen (wenn es eine PSBT ist, muss sie finalisiert werden)
     try {
-      // Prüfe ob es eine PSBT ist (Base64 mit PSBT magic bytes oder Hex)
+      // PrÃ¼fe ob es eine PSBT ist (Base64 mit PSBT magic bytes oder Hex)
       const isBase64PSBT = presignedTxHex.startsWith('cHNidP8BA'); // PSBT magic bytes in base64
       const isHexPSBT = /^[0-9a-fA-F]+$/.test(presignedTxHex) && presignedTxHex.length > 200 && presignedTxHex.length < 2000;
       const isBase64String = !/^[0-9a-fA-F]+$/.test(presignedTxHex) && presignedTxHex.length > 100; // Nicht-Hex, aber lang genug
@@ -735,26 +878,26 @@ export async function transferOrdinal(inscriptionId, recipientAddress, feeRate =
         console.log('[OrdinalTransfer] Detected Base64 PSBT format, finalizing...');
         try {
           finalTxHex = finalizeSignedPSBT(presignedTxHex);
-          console.log(`[OrdinalTransfer] ✅ PSBT finalized, transaction hex length: ${finalTxHex.length}`);
+          console.log(`[OrdinalTransfer] âœ… PSBT finalized, transaction hex length: ${finalTxHex.length}`);
         } catch (finalizeError) {
-          console.error(`[OrdinalTransfer] ❌ Failed to finalize Base64 PSBT:`, finalizeError.message);
+          console.error(`[OrdinalTransfer] âŒ Failed to finalize Base64 PSBT:`, finalizeError.message);
           console.error(`[OrdinalTransfer] PSBT preview: ${presignedTxHex.substring(0, 100)}...`);
           throw new Error(`Failed to finalize PSBT: ${finalizeError.message}`);
         }
       } else if (isHexPSBT) {
-        // Prüfe ob es bereits eine finalisierte Transaction ist (hex, typischerweise ~500-1000 chars)
-        // oder eine Hex-PSBT (länger, ~2000+ chars)
+        // PrÃ¼fe ob es bereits eine finalisierte Transaction ist (hex, typischerweise ~500-1000 chars)
+        // oder eine Hex-PSBT (lÃ¤nger, ~2000+ chars)
         if (presignedTxHex.length > 200 && presignedTxHex.length < 2000) {
           console.log('[OrdinalTransfer] Assuming already finalized transaction hex');
           finalTxHex = presignedTxHex;
         } else {
-          // Längere Hex-Strings könnten Hex-PSBTs sein
+          // LÃ¤ngere Hex-Strings kÃ¶nnten Hex-PSBTs sein
           console.log('[OrdinalTransfer] Attempting to finalize as Hex PSBT...');
           try {
             finalTxHex = finalizeSignedPSBT(presignedTxHex);
-            console.log(`[OrdinalTransfer] ✅ Hex PSBT finalized successfully`);
+            console.log(`[OrdinalTransfer] âœ… Hex PSBT finalized successfully`);
           } catch (finalizeError) {
-            console.warn('[OrdinalTransfer] ⚠️ Finalization failed, using as-is:', finalizeError.message);
+            console.warn('[OrdinalTransfer] âš ï¸ Finalization failed, using as-is:', finalizeError.message);
             finalTxHex = presignedTxHex;
           }
         }
@@ -763,15 +906,15 @@ export async function transferOrdinal(inscriptionId, recipientAddress, feeRate =
         console.log('[OrdinalTransfer] Unknown format, attempting to finalize as PSBT...');
         try {
           finalTxHex = finalizeSignedPSBT(presignedTxHex);
-          console.log(`[OrdinalTransfer] ✅ PSBT finalized successfully`);
+          console.log(`[OrdinalTransfer] âœ… PSBT finalized successfully`);
         } catch (finalizeError) {
-          console.error('[OrdinalTransfer] ❌ Finalization failed:', finalizeError.message);
+          console.error('[OrdinalTransfer] âŒ Finalization failed:', finalizeError.message);
           throw new Error(`Failed to process transaction: ${finalizeError.message}`);
         }
       }
     } catch (psbtError) {
-      // Wenn PSBT-Parsing fehlschlägt, ist es wahrscheinlich bereits eine finalisierte Transaction
-      console.error('[OrdinalTransfer] ❌ PSBT parsing error:', psbtError.message);
+      // Wenn PSBT-Parsing fehlschlÃ¤gt, ist es wahrscheinlich bereits eine finalisierte Transaction
+      console.error('[OrdinalTransfer] âŒ PSBT parsing error:', psbtError.message);
       console.log('[OrdinalTransfer] Using input as final transaction hex');
       finalTxHex = presignedTxHex;
     }
