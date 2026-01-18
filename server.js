@@ -14,6 +14,7 @@ import * as tradeOfferService from './services/tradeOfferService.js';
 import * as blockchainDelegateService from './services/blockchainDelegateService.js';
 import * as pointShopService from './services/pointShopService.js';
 import * as ordinalTransferService from './services/ordinalTransferService.js';
+import * as mintedCardsService from './services/mintedCardsService.js'; // 💣 BOMBENSICHER
 import * as bitcoin from 'bitcoinjs-lib';
 import * as collectionService from './services/collectionService.js';
 import { initDatabase, createTables, isDatabaseAvailable } from './services/db.js';
@@ -323,6 +324,8 @@ async function createUniSatInscription(file, address, feeRate = 1, postage = 330
 
         if (delegateData && delegateData.op === 'delegate' && delegateData.cardId && delegateData.originalInscriptionId) {
           console.log(`[UniSat API] Registering delegate with metadata: ${result.inscriptionId} -> ${delegateData.originalInscriptionId}`);
+          
+          // ✅ EBENE 1: Registry (Legacy)
           delegateRegistry.registerDelegate(
             result.inscriptionId,
             delegateData.originalInscriptionId,
@@ -334,6 +337,27 @@ async function createUniSatInscription(file, address, feeRate = 1, postage = 330
             delegateData.effect,
             delegateData.svgIcon
           );
+          
+          // 💣 EBENE 2: Database (BOMBENSICHER)
+          try {
+            await mintedCardsService.saveMintedCard({
+              inscriptionId: result.inscriptionId,
+              cardId: delegateData.cardId,
+              cardName: delegateData.name || 'Unknown',
+              rarity: delegateData.rarity || 'common',
+              walletAddress: address,
+              originalInscriptionId: delegateData.originalInscriptionId,
+              cardType: delegateData.cardType || 'animal',
+              effect: delegateData.effect,
+              svgIcon: delegateData.svgIcon,
+              txid: result.txid,
+              packType: delegateData.packType,
+              collectionId: delegateData.collectionId
+            });
+            console.log(`[UniSat API] 💣 Saved to DB: ${delegateData.name}`);
+          } catch (dbErr) {
+            console.warn(`[UniSat API] ⚠️ DB save failed (non-critical):`, dbErr.message);
+          }
         }
       } catch (parseErr) {
         console.warn(`[UniSat API] Could not parse delegate metadata:`, parseErr.message);
@@ -663,6 +687,8 @@ app.post('/api/unisat/inscribe/batch', upload.array('files'), async (req, res) =
 
           if (delegateData && delegateData.op === 'delegate' && delegateData.cardId && delegateData.originalInscriptionId) {
             console.log(`[UniSat API] Registering delegate with metadata: ${result.inscriptionId} -> ${delegateData.originalInscriptionId}`);
+            
+            // ✅ EBENE 1: Registry (Legacy)
             delegateRegistry.registerDelegate(
               result.inscriptionId,
               delegateData.originalInscriptionId,
@@ -674,6 +700,27 @@ app.post('/api/unisat/inscribe/batch', upload.array('files'), async (req, res) =
               delegateData.effect,
               delegateData.svgIcon
             );
+            
+            // 💣 EBENE 2: Database (BOMBENSICHER)
+            try {
+              await mintedCardsService.saveMintedCard({
+                inscriptionId: result.inscriptionId,
+                cardId: delegateData.cardId,
+                cardName: delegateData.name || 'Unknown',
+                rarity: delegateData.rarity || 'common',
+                walletAddress: address,
+                originalInscriptionId: delegateData.originalInscriptionId,
+                cardType: delegateData.cardType || 'animal',
+                effect: delegateData.effect,
+                svgIcon: delegateData.svgIcon,
+                txid: result.txid,
+                packType: delegateData.packType,
+                collectionId: delegateData.collectionId
+              });
+              console.log(`[UniSat API] 💣 Saved to DB (batch ${i+1}/${files.length}): ${delegateData.name}`);
+            } catch (dbErr) {
+              console.warn(`[UniSat API] ⚠️ DB save failed (non-critical):`, dbErr.message);
+            }
           }
         } catch (parseErr) {
           console.warn(`[UniSat API] Could not parse delegate metadata for file ${i + 1}:`, parseErr.message);
@@ -1594,20 +1641,54 @@ app.get('/api/inscription/image/:inscriptionId', async (req, res) => {
 // ========== DELEGATE ENDPOINTS ==========
 
 // Get Delegates by Wallet
+// 💣 BOMBENSICHER: 3-Ebenen-System für Delegates
 app.get('/api/delegates/:walletAddress', async (req, res) => {
   try {
     const { walletAddress } = req.params;
     const useHybrid = req.query.hybrid === 'true';
 
-    if (useHybrid) {
-      const delegates = await blockchainDelegateService.getDelegatesHybrid(walletAddress);
-      res.json({ delegates, count: delegates.length, source: 'hybrid' });
-    } else {
-      const delegates = delegateRegistry.getDelegatesByWallet(walletAddress);
-      res.json({ delegates, count: delegates.length, source: 'cache' });
+    // ✅ EBENE 1: PostgreSQL (primär, bombensicher)
+    console.log(`[Delegates API] 🔍 Fetching cards for ${walletAddress} (hybrid: ${useHybrid})`);
+    
+    try {
+      const delegates = await mintedCardsService.getWalletCards(walletAddress, true);
+      
+      if (delegates.length > 0) {
+        console.log(`[Delegates API] ✅ DB: Returning ${delegates.length} cards`);
+        return res.json({ 
+          delegates, 
+          count: delegates.length, 
+          source: 'database' 
+        });
+      }
+      
+      console.log(`[Delegates API] ℹ️ DB: No cards found, trying fallback...`);
+    } catch (dbErr) {
+      console.warn(`[Delegates API] ⚠️ DB error, trying fallback:`, dbErr.message);
     }
+
+    // ⚠️ EBENE 2: Blockchain (wenn DB leer oder fehlgeschlagen)
+    if (useHybrid) {
+      console.log(`[Delegates API] 🔄 Blockchain: Fetching with hybrid mode...`);
+      const delegates = await blockchainDelegateService.getDelegatesHybrid(walletAddress);
+      return res.json({ 
+        delegates, 
+        count: delegates.length, 
+        source: 'blockchain-hybrid' 
+      });
+    }
+    
+    // ⚠️ EBENE 3: Registry (letzter Fallback)
+    console.log(`[Delegates API] 📋 Registry: Using as last fallback...`);
+    const delegates = delegateRegistry.getDelegatesByWallet(walletAddress);
+    return res.json({ 
+      delegates, 
+      count: delegates.length, 
+      source: 'registry-fallback' 
+    });
+    
   } catch (error) {
-    console.error('[Delegates] ❌ Error:', error);
+    console.error('[Delegates API] ❌ All fallbacks failed:', error);
     res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
@@ -1694,6 +1775,43 @@ app.post('/api/minting/log', async (req, res) => {
     });
   } catch (error) {
     console.error('[Minting Log] ❌ Error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+// 💣 BOMBENSICHER: Update pending → confirmed
+app.post('/api/minting/update-status', async (req, res) => {
+  try {
+    const { tempId, finalInscriptionId, txid } = req.body;
+    
+    if (!tempId || !finalInscriptionId) {
+      return res.status(400).json({ 
+        error: 'tempId and finalInscriptionId required',
+        received: { tempId, finalInscriptionId }
+      });
+    }
+    
+    console.log(`[Minting Update] 🔄 Updating: ${tempId} → ${finalInscriptionId}`);
+    
+    const result = await mintedCardsService.updatePendingToConfirmed(tempId, finalInscriptionId, txid);
+    
+    if (result.success) {
+      console.log(`[Minting Update] ✅ Updated successfully (method: ${result.method})`);
+      res.json({ 
+        success: true,
+        message: 'Card status updated to confirmed',
+        method: result.method,
+        card: result.card
+      });
+    } else {
+      console.warn(`[Minting Update] ⚠️ Update failed: ${result.error}`);
+      res.status(404).json({ 
+        success: false,
+        error: result.error 
+      });
+    }
+  } catch (error) {
+    console.error('[Minting Update] ❌ Error:', error);
     res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });

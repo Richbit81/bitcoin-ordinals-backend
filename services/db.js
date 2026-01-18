@@ -161,6 +161,45 @@ export async function createTables() {
       );
     `);
 
+    // 💣 BOMBENSICHER: Minted Cards Tabelle (Hashlist aller geminteten Karten)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS minted_cards (
+        id SERIAL PRIMARY KEY,
+        inscription_id VARCHAR(255) UNIQUE NOT NULL,
+        temp_id VARCHAR(255),
+        card_id VARCHAR(100) NOT NULL,
+        card_name VARCHAR(500) NOT NULL,
+        rarity VARCHAR(50) NOT NULL,
+        pack_type VARCHAR(100),
+        collection_id VARCHAR(255),
+        wallet_address VARCHAR(100) NOT NULL,
+        original_inscription_id VARCHAR(255),
+        card_type VARCHAR(50),
+        effect TEXT,
+        svg_icon TEXT,
+        status VARCHAR(20) DEFAULT 'pending',
+        txid VARCHAR(100),
+        minted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        confirmed_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        
+        CONSTRAINT check_status CHECK (status IN ('pending', 'confirmed', 'failed'))
+      );
+    `);
+
+    // Indexes für bombensichere Performance
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_minted_cards_inscription_id ON minted_cards(inscription_id);
+      CREATE INDEX IF NOT EXISTS idx_minted_cards_temp_id ON minted_cards(temp_id);
+      CREATE INDEX IF NOT EXISTS idx_minted_cards_wallet ON minted_cards(wallet_address);
+      CREATE INDEX IF NOT EXISTS idx_minted_cards_status ON minted_cards(status);
+      CREATE INDEX IF NOT EXISTS idx_minted_cards_wallet_status ON minted_cards(wallet_address, status);
+      CREATE INDEX IF NOT EXISTS idx_minted_cards_pack_type ON minted_cards(pack_type);
+      CREATE INDEX IF NOT EXISTS idx_minted_cards_collection ON minted_cards(collection_id);
+      CREATE INDEX IF NOT EXISTS idx_minted_cards_created_at ON minted_cards(created_at DESC);
+    `);
+
     // Indexes für bessere Performance
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_point_shop_items_active ON point_shop_items(active);
@@ -170,6 +209,8 @@ export async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_collections_category ON collections(category);
       CREATE INDEX IF NOT EXISTS idx_collections_created_at ON collections(created_at);
     `);
+    
+    console.log('[DB] ✅ minted_cards Tabelle bereit mit 8 Performance-Indexes');
 
     console.log('[DB] ✅ Tabellen erstellt/überprüft');
     return true;

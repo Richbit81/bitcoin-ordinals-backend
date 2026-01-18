@@ -531,9 +531,9 @@ export async function getDelegatesFromChain(walletAddress) {
   try {
     console.log(`[Blockchain] 🔍 Suche nach Delegates für ${walletAddress}`);
     
-    // Schritt 1: Hole alle Inskriptionen der Wallet-Adresse
-    console.log(`[Blockchain] 🔍 Hole alle Inskriptionen der Adresse...`);
-    let allInscriptions = await getInscriptionsByAddress(walletAddress);
+    // 💣 BOMBENSICHER: Hole ALLE Inskriptionen mit Pagination
+    console.log(`[Blockchain] 🔍 Hole alle Inskriptionen der Adresse (mit Pagination)...`);
+    let allInscriptions = await getAllInscriptionsByAddress(walletAddress);
     console.log(`[Blockchain] ✅ Gefunden ${allInscriptions.length} Inskriptionen für Adresse`);
     if (allInscriptions.length > 0) {
       console.log(`[Blockchain] 📋 Erste 3 Inskription-IDs:`, allInscriptions.slice(0, 3).map(ins => ins.inscriptionId || ins.id));
