@@ -6177,6 +6177,12 @@ async function startServer() {
     console.log(`⚠️ Keine Datenbankverbindung - verwende JSON-Fallback\n`);
   }
 
+  // 🧹 Cleanup: Entferne alte pending IDs aus Registry
+  console.log(`🧹 Cleaning up delegate registry...`);
+  const { cleanupPendingDelegates } = await import('./services/delegateRegistry.js');
+  const cleanupResult = cleanupPendingDelegates();
+  console.log(`🧹 Cleanup result: Removed ${cleanupResult.cleaned} pending IDs, ${cleanupResult.remaining} confirmed delegates remaining\n`);
+
   // Starte Server
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n${'═'.repeat(80)}`);
