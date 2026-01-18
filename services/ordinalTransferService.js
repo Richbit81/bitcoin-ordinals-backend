@@ -353,9 +353,29 @@ export async function createTransferPSBT(inscriptionId, recipientAddress, feeRat
  * @param {string} psbtBase64 - Die PSBT als Base64-String
  * @returns {Promise<string>} - Die signierte PSBT als Base64-String
  */
-export async function signPSBTWithAdmin(psbtBase64) {
+/**
+ * Signiert eine PSBT mit dem ADMIN_PRIVATE_KEY
+ * 
+ * @param {string} psbtBase64 - Die PSBT im Base64-Format
+ * @param {object} options - Optionen für Signing
+ * @param {string} options.sighashType - 'ALL' (default, für Sofort-Transfer) oder 'SINGLE_ANYONECANPAY' (für Marketplace)
+ * @returns {string} - Die signierte PSBT im Base64-Format
+ */
+export async function signPSBTWithAdmin(psbtBase64, options = {}) {
   try {
+    // Extract options
+    const sighashType = options.sighashType || 'ALL'; // Default: SIGHASH_ALL
+    
     console.log('[OrdinalTransfer] Signing PSBT with admin private key...');
+    console.log(`[OrdinalTransfer] 🎯 SigHash Type: ${sighashType}`);
+    
+    if (sighashType === 'SINGLE_ANYONECANPAY') {
+      console.log(`[OrdinalTransfer] ✅ Using SIGHASH_SINGLE|ANYONECANPAY (Marketplace mode)`);
+      console.log(`[OrdinalTransfer] ℹ️  This allows buyer to add their own inputs for payment`);
+    } else {
+      console.log(`[OrdinalTransfer] ✅ Using SIGHASH_ALL (Immediate transfer mode)`);
+      console.log(`[OrdinalTransfer] ℹ️  This is for immediate transfers (Collection Minting)`);
+    }
     
     if (!ADMIN_PRIVATE_KEY) {
       throw new Error('ADMIN_PRIVATE_KEY not set - cannot sign PSBT');
@@ -369,8 +389,19 @@ export async function signPSBTWithAdmin(psbtBase64) {
     // Signiere alle Inputs mit Admin-KeyPair
     for (let i = 0; i < psbt.inputCount; i++) {
       try {
-        psbt.signInput(i, adminKeyPair);
-        console.log(`[OrdinalTransfer] ✅ Input ${i} signed with admin key`);
+        // Signiere den Input mit dem gewählten SigHash-Type
+        if (sighashType === 'SINGLE_ANYONECANPAY') {
+          // MARKETPLACE MODE: SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
+          // Erlaubt Käufer, eigene Inputs für Zahlung hinzuzufügen
+          const sigHashFlag = bitcoin.Transaction.SIGHASH_SINGLE | bitcoin.Transaction.SIGHASH_ANYONECANPAY;
+          psbt.signInput(i, adminKeyPair, [sigHashFlag]);
+          console.log(`[OrdinalTransfer] ✅ Input ${i} signed with SIGHASH_SINGLE|ANYONECANPAY (flag: ${sigHashFlag})`);
+        } else {
+          // IMMEDIATE TRANSFER MODE: SIGHASH_ALL (default)
+          // Signiert alle Inputs und Outputs (für sofortige Transfers)
+          psbt.signInput(i, adminKeyPair);
+          console.log(`[OrdinalTransfer] ✅ Input ${i} signed with SIGHASH_ALL (default)`);
+        }
       } catch (signError) {
         console.error(`[OrdinalTransfer] ❌ Failed to sign input ${i}:`, signError.message);
         throw new Error(`Failed to sign input ${i}: ${signError.message}`);
@@ -385,6 +416,31 @@ export async function signPSBTWithAdmin(psbtBase64) {
     console.error('[OrdinalTransfer] Error signing PSBT with admin:', error);
     throw error;
   }
+}
+
+/**
+ * WRAPPER: Signiert PSBT für SOFORTIGEN Transfer (Collection Minting)
+ * Verwendet explizit SIGHASH_ALL
+ * 
+ * Use-Case: Collection Minting (z.B. Smile a Bit)
+ * - User zahlt Item-Preis
+ * - Admin signiert mit SIGHASH_ALL
+ * - Inscription geht SOFORT an User
+ * - Keine weiteren Inputs möglich
+ * 
+ * @param {string} psbtBase64 - Unsigned PSBT
+ * @returns {string} - Signierte PSBT mit SIGHASH_ALL
+ */
+export async function signPSBTForImmediateTransfer(psbtBase64) {
+  console.log('[OrdinalTransfer] ========================================');
+  console.log('[OrdinalTransfer] 🎯 IMMEDIATE TRANSFER MODE');
+  console.log('[OrdinalTransfer] Use-Case: Collection Minting');
+  console.log('[OrdinalTransfer] SigHash: SIGHASH_ALL (standard)');
+  console.log('[OrdinalTransfer] ========================================');
+  
+  return signPSBTWithAdmin(psbtBase64, { 
+    sighashType: 'ALL' 
+  });
 }
 
 /**

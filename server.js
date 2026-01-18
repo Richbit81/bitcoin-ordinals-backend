@@ -4900,7 +4900,10 @@ app.post('/api/collections/mint-original', async (req, res) => {
         console.log(`[Collections] Owner address: ${ownerAddress} (admin address)`);
         
         try {
-          const signedPsbt = await ordinalTransferService.signPSBTWithAdmin(psbtData.psbtBase64);
+          // ✅ WICHTIG: Verwende signPSBTForImmediateTransfer für Collection Minting
+          // Dies verwendet SIGHASH_ALL für sofortige Transfers (keine weiteren Inputs möglich)
+          console.log(`[Collections] 🔐 Using signPSBTForImmediateTransfer (SIGHASH_ALL mode)`);
+          const signedPsbt = await ordinalTransferService.signPSBTForImmediateTransfer(psbtData.psbtBase64);
           const transferResult = await ordinalTransferService.transferOrdinal(
             item.inscriptionId,
             walletAddress,
@@ -4908,7 +4911,7 @@ app.post('/api/collections/mint-original', async (req, res) => {
             signedPsbt
           );
           
-          console.log(`[Collections] ✅ Original ordinal ${item.inscriptionId} transferred to ${walletAddress} (INSTANT - auto-signed)`);
+          console.log(`[Collections] ✅ Original ordinal ${item.inscriptionId} transferred to ${walletAddress} (INSTANT - auto-signed with SIGHASH_ALL)`);
           
           res.json({
             success: true,
@@ -4916,6 +4919,7 @@ app.post('/api/collections/mint-original', async (req, res) => {
             txid: transferResult.txid,
             inscriptionId: item.inscriptionId,
             instant: true,
+            signingMode: 'SIGHASH_ALL (immediate transfer)',
           });
           return; // Wichtig: Return hier
         } catch (signError) {
@@ -5999,7 +6003,98 @@ app.get('/api/admin/trades', requireAdmin, (req, res) => {
   }
 });
 
-// ========== SERVER START ==========
+// ========================================
+// MARKETPLACE ENDPOINTS (Ord-Dropz Style)
+// ========================================
+
+/**
+ * Erstellt eine vorsignierte Marketplace-Listing
+ * Verwendet SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
+ * 
+ * Use-Case: Verkäufer listet Inscription zum Verkauf
+ * - Admin signiert VORHER
+ * - Käufer kauft SPÄTER und fügt Zahlung hinzu
+ */
+app.post('/api/marketplace/create-listing', async (req, res) => {
+  try {
+    const { inscriptionId, buyerAddress, sellerAddress, priceInSats, feeRate } = req.body;
+    
+    if (!inscriptionId || !buyerAddress || !sellerAddress || !priceInSats) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: inscriptionId, buyerAddress, sellerAddress, priceInSats' 
+      });
+    }
+
+    console.log('[API] 🏪 Creating marketplace listing:', {
+      inscriptionId,
+      buyerAddress,
+      sellerAddress,
+      priceInSats,
+      feeRate: feeRate || 5,
+    });
+
+    // Import Marketplace Service dynamisch
+    const marketplaceModule = await import('./services/ordinalMarketplaceService.js');
+    
+    const result = await marketplaceModule.createMarketplaceListing(
+      inscriptionId,
+      buyerAddress,
+      sellerAddress,
+      parseInt(priceInSats, 10),
+      feeRate ? parseInt(feeRate, 10) : 5
+    );
+
+    console.log('[API] ✅ Marketplace listing created successfully');
+    return res.json(result);
+
+  } catch (error) {
+    console.error('[API] ❌ Error creating marketplace listing:', error);
+    return res.status(500).json({ 
+      error: error.message || 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+/**
+ * Bulk-Erstellung von Marketplace-Listings
+ * Wie bei Ord-Dropz: Signiert viele Inscriptions auf einmal
+ */
+app.post('/api/marketplace/create-bulk-listings', async (req, res) => {
+  try {
+    const { inscriptions, feeRate } = req.body;
+    
+    if (!Array.isArray(inscriptions) || inscriptions.length === 0) {
+      return res.status(400).json({ 
+        error: 'inscriptions must be a non-empty array of { inscriptionId, buyerAddress, sellerAddress, priceInSats }' 
+      });
+    }
+
+    console.log(`[API] 🏪 Creating ${inscriptions.length} marketplace listings (BULK)...`);
+
+    // Import Marketplace Service dynamisch
+    const marketplaceModule = await import('./services/ordinalMarketplaceService.js');
+
+    const result = await marketplaceModule.createBulkMarketplaceListings(
+      inscriptions,
+      feeRate ? parseInt(feeRate, 10) : 5
+    );
+
+    console.log(`[API] ✅ Bulk listing creation complete: ${result.summary.successful}/${result.summary.total} successful`);
+    return res.json(result);
+
+  } catch (error) {
+    console.error('[API] ❌ Error creating bulk marketplace listings:', error);
+    return res.status(500).json({ 
+      error: error.message || 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+// ========================================
+// SERVER START
+// ========================================
 
 // Initialisiere Datenbank und starte Server
 async function startServer() {
