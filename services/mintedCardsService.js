@@ -402,6 +402,73 @@ export function extractDelegateMetadata(content) {
 }
 
 /**
+ * 🔄 AUTO-SYNC: Speichere Blockchain-Delegates in DB
+ * Wird aufgerufen wenn Blockchain-Scan Delegates findet die noch nicht in DB sind
+ * @param {Array} delegates - Array von Delegate-Objekten vom Blockchain
+ * @param {string} walletAddress - Wallet-Adresse
+ * @returns {Object} { synced, skipped, errors }
+ */
+export async function syncBlockchainDelegatesToDB(delegates, walletAddress) {
+  if (!isDatabaseAvailable()) {
+    console.log('[MintedCards] ⚠️ DB not available, skipping sync');
+    return { synced: 0, skipped: 0, errors: 0 };
+  }
+
+  console.log(`[MintedCards] 🔄 Syncing ${delegates.length} blockchain delegates to DB for ${walletAddress}...`);
+  
+  let synced = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (const delegate of delegates) {
+    try {
+      // Skip mock/pending IDs
+      if (delegate.delegateInscriptionId.startsWith('mock-') || 
+          delegate.delegateInscriptionId.startsWith('pending-')) {
+        skipped++;
+        continue;
+      }
+
+      // Check if already exists
+      const exists = await cardExists(delegate.delegateInscriptionId);
+      if (exists) {
+        skipped++;
+        continue;
+      }
+
+      // Save to DB
+      const cardData = {
+        inscriptionId: delegate.delegateInscriptionId,
+        tempId: null, // Kein temp, ist bereits confirmed
+        cardId: delegate.cardId || `CARD-${Date.now()}`,
+        cardName: delegate.name,
+        rarity: delegate.rarity,
+        packType: 'blockchain-sync', // Markiere als aus Blockchain-Sync
+        collectionId: null,
+        walletAddress: walletAddress,
+        originalInscriptionId: delegate.originalInscriptionId,
+        cardType: delegate.cardType,
+        effect: delegate.effect,
+        svgIcon: delegate.svgIcon,
+        status: 'confirmed',
+        txid: null,
+        confirmedAt: delegate.timestamp ? new Date(delegate.timestamp) : new Date(),
+      };
+
+      await saveMintedCard(cardData);
+      synced++;
+      console.log(`[MintedCards] ✅ Synced: ${cardData.cardName} (${delegate.delegateInscriptionId})`);
+    } catch (err) {
+      console.error(`[MintedCards] ❌ Error syncing ${delegate.name}:`, err);
+      errors++;
+    }
+  }
+
+  console.log(`[MintedCards] 🎉 Sync complete: ${synced} synced, ${skipped} skipped, ${errors} errors`);
+  return { synced, skipped, errors };
+}
+
+/**
  * 💣 BOMBENSICHER: Hole alle pending Cards (für Cron Job)
  * @param {number} olderThanMinutes - Nur Cards älter als X Minuten
  * @param {number} limit - Max Anzahl

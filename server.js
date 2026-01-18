@@ -1673,6 +1673,19 @@ app.get('/api/delegates/:walletAddress', async (req, res) => {
     if (useHybrid) {
       console.log(`[Delegates API] 🔄 Blockchain: Fetching with hybrid mode...`);
       const delegates = await blockchainDelegateService.getDelegatesHybrid(walletAddress);
+      
+      // 🔄 AUTO-SYNC: Speichere gefundene Delegates in DB für nächste Abfrage
+      if (delegates.length > 0 && isDatabaseAvailable()) {
+        console.log(`[Delegates API] 🔄 Auto-syncing ${delegates.length} blockchain delegates to DB...`);
+        try {
+          const syncResult = await mintedCardsService.syncBlockchainDelegatesToDB(delegates, walletAddress);
+          console.log(`[Delegates API] ✅ Auto-sync: ${syncResult.synced} synced, ${syncResult.skipped} skipped, ${syncResult.errors} errors`);
+        } catch (syncErr) {
+          console.error(`[Delegates API] ⚠️ Auto-sync failed (non-blocking):`, syncErr.message);
+          // Non-blocking - Daten werden trotzdem zurückgegeben
+        }
+      }
+      
       return res.json({ 
         delegates, 
         count: delegates.length, 
