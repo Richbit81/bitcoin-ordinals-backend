@@ -69,6 +69,7 @@ export async function createCollection(data) {
     page: data.page || null,
     mintType: data.mintType || 'individual',
     showBanner: data.showBanner !== undefined ? data.showBanner : false,
+    isPremium: data.isPremium !== undefined ? data.isPremium : false, // 💎 Premium Collection
     createdAt: data.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     active: data.active !== false,
@@ -82,8 +83,8 @@ export async function createCollection(data) {
     try {
       const pool = getPool();
       await pool.query(`
-        INSERT INTO collections (id, name, description, thumbnail, price, category, page, mint_type, show_banner, items, active, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        INSERT INTO collections (id, name, description, thumbnail, price, category, page, mint_type, show_banner, is_premium, items, active, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         ON CONFLICT (id) DO UPDATE SET
           name = EXCLUDED.name,
           description = EXCLUDED.description,
@@ -93,6 +94,7 @@ export async function createCollection(data) {
           page = EXCLUDED.page,
           mint_type = EXCLUDED.mint_type,
           show_banner = EXCLUDED.show_banner,
+          is_premium = EXCLUDED.is_premium,
           items = EXCLUDED.items,
           active = EXCLUDED.active,
           updated_at = EXCLUDED.updated_at
@@ -106,6 +108,7 @@ export async function createCollection(data) {
         newCollection.page,
         newCollection.mintType,
         newCollection.showBanner,
+        newCollection.isPremium, // 💎 Premium flag
         JSON.stringify(newCollection.items),
         newCollection.active,
         newCollection.createdAt,
@@ -188,6 +191,7 @@ export async function getAllCollections(category = null, page = null) {
         page: row.page || null,
         mintType: row.mint_type || 'individual',
         showBanner: row.show_banner !== false,
+        isPremium: row.is_premium !== false, // 💎 Premium flag
         createdAt: row.created_at?.toISOString() || new Date().toISOString(),
         updatedAt: row.updated_at?.toISOString() || new Date().toISOString(),
         active: row.active !== false,
@@ -433,6 +437,7 @@ export async function getAllCollectionsAdmin(category = null) {
         page: row.page || null,
         mintType: row.mint_type || 'individual',
         showBanner: row.show_banner !== false,
+        isPremium: row.is_premium !== false, // 💎 Premium flag
         createdAt: row.created_at?.toISOString() || new Date().toISOString(),
         updatedAt: row.updated_at?.toISOString() || new Date().toISOString(),
         active: row.active !== false,

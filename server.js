@@ -13,6 +13,7 @@ import * as pointsService from './services/pointsService.js';
 import * as tradeOfferService from './services/tradeOfferService.js';
 import * as blockchainDelegateService from './services/blockchainDelegateService.js';
 import * as pointShopService from './services/pointShopService.js';
+import * as pointsMigration from './services/pointsMigration.js'; // 💎 Punkte Migration
 import * as ordinalTransferService from './services/ordinalTransferService.js';
 import * as mintedCardsService from './services/mintedCardsService.js'; // 💣 BOMBENSICHER
 import * as pendingCardsUpdateJob from './services/pendingCardsUpdateJob.js'; // 💣 Auto-Update Job
@@ -5172,6 +5173,30 @@ app.post('/api/collections/mint-original', async (req, res) => {
           
           console.log(`[Collections] ✅ Original ordinal ${item.inscriptionId} transferred to ${walletAddress} (INSTANT - auto-signed with SIGHASH_ALL)`);
           
+          // 💎 PUNKTESYSTEM: Vergebe Punkte für Collection Mint
+          try {
+            const pointsToAdd = collection.isPremium 
+              ? pointsService.POINTS_CONFIG['premium-mint'] 
+              : pointsService.POINTS_CONFIG['normal-mint'];
+            
+            const pointsResult = await pointsService.addPoints(
+              walletAddress,
+              pointsToAdd,
+              `minted collection: ${collection.name} (${collection.isPremium ? 'premium' : 'normal'})`,
+              { 
+                collectionId: collection.id,
+                collectionName: collection.name,
+                isPremium: collection.isPremium,
+                inscriptionId: item.inscriptionId,
+                txid: transferResult.txid
+              }
+            );
+            console.log(`[Collections] 💎 Added ${pointsToAdd} points (+ ${pointsResult.bonus} bonus) to ${walletAddress}. Total: ${pointsResult.total}`);
+          } catch (pointsErr) {
+            console.error(`[Collections] ❌ Failed to add points (non-blocking):`, pointsErr);
+            // Non-blocking - Mint war erfolgreich
+          }
+          
           res.json({
             success: true,
             message: 'Transfer completed successfully - inscription is on its way!',
@@ -5215,6 +5240,30 @@ app.post('/api/collections/mint-original', async (req, res) => {
       
       console.log(`[Collections] ✅ Original ordinal ${item.inscriptionId} transferred to ${walletAddress}`);
       console.log(`[Collections] 📝 Transaction ID: ${transferResult.txid}`);
+      
+      // 💎 PUNKTESYSTEM: Vergebe Punkte für Collection Mint
+      try {
+        const pointsToAdd = collection.isPremium 
+          ? pointsService.POINTS_CONFIG['premium-mint'] 
+          : pointsService.POINTS_CONFIG['normal-mint'];
+        
+        const pointsResult = await pointsService.addPoints(
+          walletAddress,
+          pointsToAdd,
+          `minted collection: ${collection.name} (${collection.isPremium ? 'premium' : 'normal'})`,
+          { 
+            collectionId: collection.id,
+            collectionName: collection.name,
+            isPremium: collection.isPremium,
+            inscriptionId: item.inscriptionId,
+            txid: transferResult.txid
+          }
+        );
+        console.log(`[Collections] 💎 Added ${pointsToAdd} points (+ ${pointsResult.bonus} bonus) to ${walletAddress}. Total: ${pointsResult.total}`);
+      } catch (pointsErr) {
+        console.error(`[Collections] ❌ Failed to add points (non-blocking):`, pointsErr);
+        // Non-blocking - Mint war erfolgreich
+      }
       
       res.json({
         success: true,
@@ -5824,6 +5873,9 @@ app.post('/api/trades/offers/:offerId/accept', async (req, res) => {
     // Markiere Offer als "pending" (wird erst auf "accepted" gesetzt nach erfolgreichem Broadcast)
     tradeOfferService.updateTradeOfferStatus(offerId, 'pending');
     
+    // 💎 Speichere Taker im Offer (für Punktevergabe später)
+    tradeOfferService.updateTradeOfferTaker(offerId, taker);
+    
     // Speichere Maker-PSBTs im Offer (für später, wenn Maker signiert)
     tradeOfferService.saveMakerPsbts(offerId, makerPsbts);
     
@@ -5967,6 +6019,37 @@ app.post('/api/trades/offers/:offerId/broadcast', async (req, res) => {
 
     // Vollständiger Trade abgeschlossen
     tradeOfferService.updateTradeOfferStatus(offerId, 'accepted');
+    
+    // 💎 PUNKTESYSTEM: Vergebe Punkte an beide Teilnehmer
+    try {
+      const maker = offer.maker;
+      const taker = offer.taker; // Wurde im accept endpoint gespeichert
+      
+      if (maker && taker) {
+        // Maker bekommt 5 Punkte
+        await pointsService.addPoints(
+          maker,
+          pointsService.POINTS_CONFIG['trade'],
+          `completed trade (maker): ${offer.offerCards.length} for ${offer.requestCards.length} cards`,
+          { offerId, role: 'maker', offerCards: offer.offerCards, requestCards: offer.requestCards }
+        );
+        
+        // Taker bekommt 5 Punkte
+        await pointsService.addPoints(
+          taker,
+          pointsService.POINTS_CONFIG['trade'],
+          `completed trade (taker): ${offer.requestCards.length} for ${offer.offerCards.length} cards`,
+          { offerId, role: 'taker', offerCards: offer.offerCards, requestCards: offer.requestCards }
+        );
+        
+        console.log(`[Trades] 💎 Added ${pointsService.POINTS_CONFIG['trade']} points each to maker (${maker}) and taker (${taker})`);
+      } else {
+        console.warn(`[Trades] ⚠️ Cannot add points: maker or taker missing (maker: ${maker}, taker: ${taker})`);
+      }
+    } catch (pointsErr) {
+      console.error(`[Trades] ❌ Failed to add points (non-blocking):`, pointsErr);
+      // Non-blocking - Trade war erfolgreich
+    }
     
     console.log(`[Trades] ✅ Trade ${offerId} completed successfully. All ${actualCount} transactions broadcasted.`);
     res.json({ 
@@ -6369,6 +6452,7 @@ async function startServer() {
     // Führe Migration aus (JSON -> DB)
     await pointShopService.migrateJSONToDB();
     await collectionService.migrateCollectionsToDB();
+    await pointsMigration.migratePointsJSONToDB(); // 💎 Punkte Migration
     console.log(`✅ Datenbank bereit\n`);
   } else {
     console.log(`⚠️ Keine Datenbankverbindung - verwende JSON-Fallback\n`);

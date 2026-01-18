@@ -126,6 +126,20 @@ export function updateTradeOfferStatus(offerId, status) {
 }
 
 /**
+ * 💎 Aktualisiere Trade Offer Taker (für Punktevergabe)
+ */
+export function updateTradeOfferTaker(offerId, takerAddress) {
+  const offers = loadTradeOffers();
+  if (offers[offerId]) {
+    offers[offerId].taker = takerAddress;
+    saveTradeOffers(offers);
+    console.log(`[TradeOffer] Updated offer ${offerId} taker: ${takerAddress}`);
+    return offers[offerId];
+  }
+  return null;
+}
+
+/**
  * Lösche ein Trade Offer
  */
 export function deleteTradeOffer(offerId) {

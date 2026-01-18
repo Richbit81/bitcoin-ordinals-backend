@@ -150,6 +150,19 @@ export async function createTables() {
       END $$;
     `);
 
+    // 💎 Füge 'is_premium' Spalte hinzu falls sie nicht existiert
+    await pool.query(`
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'collections' AND column_name = 'is_premium'
+        ) THEN
+          ALTER TABLE collections ADD COLUMN is_premium BOOLEAN DEFAULT false;
+        END IF;
+      END $$;
+    `);
+
     // Migration Status Tabelle (verhindert mehrfache Migrationen)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS migration_status (
@@ -200,6 +213,36 @@ export async function createTables() {
       CREATE INDEX IF NOT EXISTS idx_minted_cards_created_at ON minted_cards(created_at DESC);
     `);
 
+    // 💎 PUNKTESYSTEM: Tabelle für Wallet-Punkte (bombensicher)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS points (
+        wallet_address VARCHAR(100) PRIMARY KEY,
+        total_points INTEGER NOT NULL DEFAULT 0,
+        first_mint_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 💎 PUNKTESYSTEM: Tabelle für Punkte-Historie
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS points_history (
+        id SERIAL PRIMARY KEY,
+        wallet_address VARCHAR(100) NOT NULL,
+        points INTEGER NOT NULL,
+        reason VARCHAR(500) NOT NULL,
+        details JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Indexes für Punktesystem
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_points_wallet ON points(wallet_address);
+      CREATE INDEX IF NOT EXISTS idx_points_history_wallet ON points_history(wallet_address);
+      CREATE INDEX IF NOT EXISTS idx_points_history_created ON points_history(created_at DESC);
+    `);
+
     // Indexes für bessere Performance
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_point_shop_items_active ON point_shop_items(active);
@@ -211,6 +254,7 @@ export async function createTables() {
     `);
     
     console.log('[DB] ✅ minted_cards Tabelle bereit mit 8 Performance-Indexes');
+    console.log('[DB] ✅ points + points_history Tabellen bereit mit 3 Indexes');
 
     console.log('[DB] ✅ Tabellen erstellt/überprüft');
     return true;
