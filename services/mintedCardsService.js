@@ -4,10 +4,13 @@
  * 1. PostgreSQL (primär) - Hashlist aller Karten
  * 2. Registry (Cache) - Schneller Zugriff
  * 3. Blockchain (Fallback) - Letzte Instanz
+ * 
+ * ✅ NEU: Mit Validierung gegen Projekt-Configs
  */
 
 import { getPool, isDatabaseAvailable } from './db.js';
 import * as delegateRegistry from './delegateRegistry.js';
+import * as validationService from './validationService.js';
 
 /**
  * 💣 EBENE 1: Speichere gemintete Karte in DB (bombensicher)
@@ -31,6 +34,26 @@ export async function saveMintedCard(cardData) {
   
   console.log(`[MintedCards] 💾 Saving ${status} card: ${cardData.cardName} (${cardData.inscriptionId})`);
   
+  // 💣 KRITISCHE VALIDIERUNG: Prüfe originalInscriptionId gegen Projekt-Config
+  if (cardData.originalInscriptionId && cardData.cardName) {
+    const validation = validationService.validateDelegateCard({
+      cardName: cardData.cardName,
+      originalInscriptionId: cardData.originalInscriptionId,
+      projectId: cardData.projectId // optional
+    });
+    
+    if (!validation.valid) {
+      validationService.logValidationError('saveMintedCard', validation);
+      throw new Error(`Validation failed: ${validation.error}`);
+    }
+    
+    // Auto-detect projectId wenn nicht vorhanden
+    if (!cardData.projectId && validation.projectId) {
+      cardData.projectId = validation.projectId;
+      console.log(`[MintedCards] 🔍 Auto-detected projectId: ${validation.projectId} for card ${cardData.cardName}`);
+    }
+  }
+  
   // ✅ EBENE 1: PostgreSQL (primär)
   if (isDatabaseAvailable()) {
     try {
@@ -40,12 +63,13 @@ export async function saveMintedCard(cardData) {
           inscription_id, temp_id, card_id, card_name, rarity,
           pack_type, collection_id, wallet_address,
           original_inscription_id, card_type, effect, svg_icon,
-          status, txid, confirmed_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+          status, txid, confirmed_at, project_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         ON CONFLICT (inscription_id) 
         DO UPDATE SET
           status = EXCLUDED.status,
           confirmed_at = EXCLUDED.confirmed_at,
+          project_id = EXCLUDED.project_id,
           updated_at = CURRENT_TIMESTAMP
         RETURNING *
       `;
@@ -65,7 +89,8 @@ export async function saveMintedCard(cardData) {
         cardData.svgIcon || null,
         status,
         cardData.txid || null,
-        isPending ? null : new Date()
+        isPending ? null : new Date(),
+        cardData.projectId || null // NEU: projectId
       ];
       
       const result = await pool.query(query, values);

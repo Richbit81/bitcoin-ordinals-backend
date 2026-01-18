@@ -6462,6 +6462,15 @@ async function startServer() {
     // Erstelle Tabellen
     await createTables();
     
+    // 🎯 NEUE MIGRATION: Füge project_id Spalten hinzu
+    console.log(`🔧 Checking for project_id columns...`);
+    try {
+      const { addProjectIdColumns } = await import('./scripts/add-project-id-to-db.js');
+      await addProjectIdColumns();
+    } catch (migErr) {
+      console.warn(`[Server] ⚠️ Project ID migration skipped:`, migErr.message);
+    }
+    
     // Führe Migration aus (JSON -> DB)
     await pointShopService.migrateJSONToDB();
     await collectionService.migrateCollectionsToDB();
