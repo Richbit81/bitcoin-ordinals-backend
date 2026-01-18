@@ -15,6 +15,7 @@ import * as blockchainDelegateService from './services/blockchainDelegateService
 import * as pointShopService from './services/pointShopService.js';
 import * as ordinalTransferService from './services/ordinalTransferService.js';
 import * as mintedCardsService from './services/mintedCardsService.js'; // 💣 BOMBENSICHER
+import * as pendingCardsUpdateJob from './services/pendingCardsUpdateJob.js'; // 💣 Auto-Update Job
 import * as bitcoin from 'bitcoinjs-lib';
 import * as collectionService from './services/collectionService.js';
 import { initDatabase, createTables, isDatabaseAvailable } from './services/db.js';
@@ -1816,6 +1817,24 @@ app.post('/api/minting/update-status', async (req, res) => {
   }
 });
 
+// 💣 BOMBENSICHER: Manual Trigger für Pending Update Job (Testing)
+app.post('/api/admin/trigger-pending-update', async (req, res) => {
+  try {
+    console.log(`[Admin] 🔧 Manual pending update job triggered`);
+    
+    const result = await pendingCardsUpdateJob.updatePendingCards();
+    
+    res.json({
+      success: true,
+      message: 'Pending update job completed',
+      stats: result
+    });
+  } catch (error) {
+    console.error('[Admin] ❌ Error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
 // Test: Prüfe spezifische Inskriptionen
 app.post('/api/test/check-inscriptions', async (req, res) => {
   try {
@@ -1979,6 +1998,66 @@ app.get('/api/test/delegates/:walletAddress', async (req, res) => {
 // ========== UNISAT API ENDPOINTS (ERWEITERT) ==========
 
 // Get Order Summary
+// 💣 BOMBENSICHER: Order Status Check für pending → confirmed Updates
+app.get('/api/unisat/order-status/:orderId', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const UNISAT_API_KEY = process.env.UNISAT_API_KEY;
+    const UNISAT_API_URL = process.env.UNISAT_API_URL || 'https://open-api.unisat.io';
+    
+    if (!UNISAT_API_KEY) {
+      return res.status(500).json({ error: 'UniSat API key not configured' });
+    }
+
+    console.log(`[Order Status] 🔍 Checking order: ${orderId}`);
+
+    const response = await fetch(`${UNISAT_API_URL}/v2/inscribe/order/${orderId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${UNISAT_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error('[Order Status] ❌ Error:', response.status, errorText);
+      return res.status(response.status).json({ 
+        error: `UniSat API error: ${response.status}`,
+        details: errorText
+      });
+    }
+
+    const data = await response.json();
+    
+    if (data.code !== 0) {
+      console.error('[Order Status] ❌ API returned error code:', data.code, data.msg);
+      return res.status(400).json({ 
+        error: data.msg || 'Order check failed',
+        code: data.code
+      });
+    }
+    
+    console.log(`[Order Status] ✅ Order ${orderId} status: ${data.data?.status || 'unknown'}`);
+    
+    // Wenn confirmed, extrahiere Inscription IDs
+    if (data.data?.status === 'confirmed' && data.data?.inscriptions) {
+      console.log(`[Order Status] 📋 Found ${data.data.inscriptions.length} inscriptions`);
+    }
+    
+    res.json({
+      orderId: orderId,
+      status: data.data?.status || 'unknown',
+      inscriptions: data.data?.inscriptions || [],
+      txid: data.data?.txid || null,
+      data: data.data
+    });
+  } catch (error) {
+    console.error('[Order Status] ❌ Error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
 app.get('/api/unisat/order/summary', async (req, res) => {
   try {
     const UNISAT_API_KEY = process.env.UNISAT_API_KEY;
@@ -6300,6 +6379,23 @@ async function startServer() {
   const { cleanupPendingDelegates } = await import('./services/delegateRegistry.js');
   const cleanupResult = cleanupPendingDelegates();
   console.log(`🧹 Cleanup result: Removed ${cleanupResult.cleaned} pending IDs, ${cleanupResult.remaining} confirmed delegates remaining\n`);
+
+  // 💣 BOMBENSICHER: Starte Cron Job für Auto-Update (pending → confirmed)
+  console.log(`⏰ Starting Cron Job for pending cards auto-update...`);
+  
+  // Erste Ausführung nach 30 Sekunden (um DB Zeit zu geben)
+  setTimeout(async () => {
+    console.log(`[Cron] 🚀 Running initial pending cards update...`);
+    await pendingCardsUpdateJob.updatePendingCards();
+  }, 30000);
+  
+  // Dann alle 5 Minuten
+  setInterval(async () => {
+    console.log(`[Cron] ⏰ Running scheduled pending cards update...`);
+    await pendingCardsUpdateJob.updatePendingCards();
+  }, 5 * 60 * 1000); // 5 Minuten
+  
+  console.log(`⏰ Cron Job scheduled: Every 5 minutes (first run in 30s)\n`);
 
   // Starte Server
   app.listen(PORT, '0.0.0.0', () => {

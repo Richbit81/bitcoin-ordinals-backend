@@ -343,3 +343,98 @@ export async function cardExists(inscriptionId) {
     return false;
   }
 }
+
+/**
+ * 💣 Helper: Extrahiere Delegate Metadata aus Inscription Content
+ * @param {string} content - HTML/JSON Content
+ * @returns {Object|null} Metadata oder null
+ */
+export function extractDelegateMetadata(content) {
+  if (!content) return null;
+  
+  try {
+    // Methode 1: Direktes JSON mit ord-20 Metadaten
+    try {
+      const json = JSON.parse(content);
+      if (json.p === 'ord-20' && json.op === 'delegate') {
+        return {
+          cardId: json.cardId,
+          cardName: json.name,
+          rarity: json.rarity,
+          originalInscriptionId: json.originalInscriptionId,
+          cardType: json.cardType,
+          effect: json.effect,
+          svgIcon: json.svgIcon,
+          packType: json.packType,
+          collectionId: json.collectionId
+        };
+      }
+    } catch {
+      // Kein direktes JSON
+    }
+    
+    // Methode 2: HTML mit Metadaten im <script> Tag
+    if (content.includes('<script') && content.includes('delegate-metadata')) {
+      const scriptMatch = content.match(/<script[^>]*id=["']delegate-metadata["'][^>]*>([\s\S]*?)<\/script>/i);
+      if (scriptMatch && scriptMatch[1]) {
+        const json = JSON.parse(scriptMatch[1].trim());
+        if (json.p === 'ord-20' && json.op === 'delegate') {
+          return {
+            cardId: json.cardId,
+            cardName: json.name,
+            rarity: json.rarity,
+            originalInscriptionId: json.originalInscriptionId,
+            cardType: json.cardType,
+            effect: json.effect,
+            svgIcon: json.svgIcon,
+            packType: json.packType,
+            collectionId: json.collectionId
+          };
+        }
+      }
+    }
+    
+    return null;
+  } catch (err) {
+    console.error(`[MintedCards] ⚠️ extractDelegateMetadata error:`, err.message);
+    return null;
+  }
+}
+
+/**
+ * 💣 BOMBENSICHER: Hole alle pending Cards (für Cron Job)
+ * @param {number} olderThanMinutes - Nur Cards älter als X Minuten
+ * @param {number} limit - Max Anzahl
+ * @returns {Array} Array von pending Cards
+ */
+export async function getPendingCards(olderThanMinutes = 5, limit = 100) {
+  if (!isDatabaseAvailable()) {
+    console.warn(`[MintedCards] ⚠️ DB not available, cannot get pending cards`);
+    return [];
+  }
+  
+  try {
+    const pool = getPool();
+    const query = `
+      SELECT 
+        id,
+        inscription_id as "inscriptionId",
+        temp_id as "tempId",
+        card_id as "cardId",
+        card_name as "cardName",
+        wallet_address as "walletAddress",
+        minted_at as "mintedAt"
+      FROM minted_cards
+      WHERE status = 'pending'
+      AND minted_at < NOW() - INTERVAL '${olderThanMinutes} minutes'
+      ORDER BY minted_at ASC
+      LIMIT $1
+    `;
+    
+    const result = await pool.query(query, [limit]);
+    return result.rows;
+  } catch (err) {
+    console.error(`[MintedCards] ❌ getPendingCards error:`, err);
+    return [];
+  }
+}
