@@ -1612,13 +1612,53 @@ app.get('/api/delegates/:walletAddress', async (req, res) => {
   }
 });
 
-// Get Pack Availability
+// Get Pack Availability (all packs)
 app.get('/api/packs/availability', async (req, res) => {
   try {
-    // Für jetzt: Gib leeres Objekt zurück (kann später erweitert werden)
-    res.json({});
+    res.json({
+      'starter-pack': { available: true, sold: 0, total: 1000 },
+      'premium-pack': { available: true, sold: 0, total: 500 }
+    });
   } catch (error) {
     console.error('[Packs Availability] ❌ Error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+// Get Pack Availability (specific pack)
+app.get('/api/packs/:packId/availability', async (req, res) => {
+  try {
+    const { packId } = req.params;
+    console.log(`[Packs] ✅ Checking availability for: ${packId}`);
+    
+    // Default availability
+    const availability = {
+      available: true,
+      sold: 0,
+      total: packId === 'starter-pack' ? 1000 : 500
+    };
+    
+    res.json(availability);
+  } catch (error) {
+    console.error('[Packs Availability] ❌ Error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+// Increment Pack Counter
+app.post('/api/packs/:packId/increment', async (req, res) => {
+  try {
+    const { packId } = req.params;
+    console.log(`[Packs] ✅ Incrementing counter for: ${packId}`);
+    
+    // For now: Just acknowledge (can be stored in DB later)
+    res.json({ 
+      success: true, 
+      packId,
+      message: 'Pack counter incremented'
+    });
+  } catch (error) {
+    console.error('[Packs Increment] ❌ Error:', error);
     res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
@@ -1632,6 +1672,28 @@ app.get('/api/minting/logs/:walletAddress', async (req, res) => {
     res.json({ logs: [] });
   } catch (error) {
     console.error('[Minting Logs] ❌ Error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+// Log Minting Event
+app.post('/api/minting/log', async (req, res) => {
+  try {
+    const { walletAddress, packId, inscriptionIds, txid } = req.body;
+    console.log(`[Minting] ✅ Logging mint event:`, {
+      walletAddress,
+      packId,
+      inscriptionCount: inscriptionIds?.length,
+      txid
+    });
+    
+    // For now: Just acknowledge (can be stored in DB later)
+    res.json({ 
+      success: true,
+      message: 'Minting event logged'
+    });
+  } catch (error) {
+    console.error('[Minting Log] ❌ Error:', error);
     res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
